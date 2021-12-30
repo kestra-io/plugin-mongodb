@@ -14,6 +14,7 @@ import lombok.NoArgsConstructor;
 import lombok.ToString;
 import lombok.experimental.SuperBuilder;
 import org.bson.BsonDocument;
+import org.bson.conversions.Bson;
 
 import javax.validation.constraints.NotNull;
 
@@ -43,11 +44,15 @@ public abstract class AbstractTask extends Task {
     @NotNull
     protected String collection;
 
-    protected MongoCollection<BsonDocument> collection(RunContext runContext, MongoClient client) throws IllegalVariableEvaluationException {
+    protected MongoCollection<Bson> collection(RunContext runContext, MongoClient client) throws IllegalVariableEvaluationException {
+        return this.collection(runContext, client, Bson.class);
+    }
+
+    protected <T> MongoCollection<T> collection(RunContext runContext, MongoClient client, Class<T> cls) throws IllegalVariableEvaluationException {
         MongoDatabase database = client.getDatabase(runContext.render(this.database));
         return database.getCollection(
             runContext.render(this.collection),
-            BsonDocument.class
+            cls
         );
     }
 }

@@ -15,6 +15,7 @@ import lombok.*;
 import lombok.experimental.SuperBuilder;
 import org.apache.commons.lang3.tuple.Pair;
 import org.bson.BsonDocument;
+import org.bson.conversions.Bson;
 import org.slf4j.Logger;
 
 import java.io.File;
@@ -22,7 +23,6 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.URI;
-import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
@@ -99,7 +99,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         Logger logger = runContext.logger();
 
         try (MongoClient client = this.connection.client(runContext)) {
-            MongoCollection<BsonDocument> collection = this.collection(runContext, client);
+            MongoCollection<BsonDocument> collection = this.collection(runContext, client, BsonDocument.class);
 
             BsonDocument bsonFilter = MongoDbService.toDocument(runContext, this.filter);
 
@@ -159,7 +159,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         try (OutputStream output = new FileOutputStream(tempFile)) {
             documents.forEach(throwConsumer(bsonDocument -> {
                 count.incrementAndGet();
-                FileSerde.write(output, MongoDbService.map(bsonDocument));
+                FileSerde.write(output, MongoDbService.map(bsonDocument.toBsonDocument()));
             }));
         }
 
@@ -173,10 +173,11 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         ArrayList<Object> result = new ArrayList<>();
         AtomicLong count = new AtomicLong();
 
-        documents.forEach(throwConsumer(bsonDocument -> {
-            count.incrementAndGet();
-            result.add(MongoDbService.map(bsonDocument));
-        }));
+        documents
+            .forEach(throwConsumer(bsonDocument -> {
+                count.incrementAndGet();
+                result.add(MongoDbService.map(bsonDocument.toBsonDocument()));
+            }));
 
         return Pair.of(
             result,

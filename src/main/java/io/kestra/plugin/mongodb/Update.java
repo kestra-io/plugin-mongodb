@@ -14,6 +14,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 import org.bson.BsonDocument;
+import org.bson.conversions.Bson;
 import org.slf4j.Logger;
 
 import javax.annotation.Nullable;
@@ -91,7 +92,7 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
         Logger logger = runContext.logger();
 
         try (MongoClient client = this.connection.client(runContext)) {
-            MongoCollection<BsonDocument> collection = this.collection(runContext, client);
+            MongoCollection<Bson> collection = this.collection(runContext, client);
 
             BsonDocument bsonDocument = MongoDbService.toDocument(runContext, this.document);
             BsonDocument bsonFilter = MongoDbService.toDocument(runContext, this.filter);

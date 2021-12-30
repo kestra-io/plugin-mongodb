@@ -13,6 +13,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 import org.bson.BsonDocument;
+import org.bson.conversions.Bson;
 import org.slf4j.Logger;
 
 import java.util.Objects;
@@ -68,7 +69,7 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
         Logger logger = runContext.logger();
 
         try (MongoClient client = this.connection.client(runContext)) {
-            MongoCollection<BsonDocument> collection = this.collection(runContext, client);
+            MongoCollection<Bson> collection = this.collection(runContext, client);
 
             BsonDocument bsonDocument = MongoDbService.toDocument(runContext, this.document);
             InsertOneResult insertOneResult = collection.insertOne(bsonDocument);
