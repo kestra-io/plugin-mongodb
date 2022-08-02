@@ -27,7 +27,7 @@ import java.util.Map;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Bulk load documents in elasticsearch using Kestra Internal Storage file"
+    title = "Bulk load documents in MongoDB using Kestra Internal Storage file"
 )
 @Plugin(
     examples = {

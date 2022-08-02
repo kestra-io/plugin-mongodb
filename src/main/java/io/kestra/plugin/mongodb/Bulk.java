@@ -3,21 +3,19 @@ package io.kestra.plugin.mongodb;
 import com.mongodb.client.model.*;
 import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Plugin;
-import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.runners.RunContext;
-import io.kestra.core.serializers.FileSerde;
-import io.kestra.core.serializers.JacksonMapper;
 import io.reactivex.BackpressureStrategy;
 import io.reactivex.Flowable;
 import io.reactivex.FlowableOnSubscribe;
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.*;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.ToString;
 import lombok.experimental.SuperBuilder;
 import org.bson.BsonDocument;
-import org.bson.BsonObjectId;
 import org.bson.BsonValue;
 import org.bson.conversions.Bson;
-import org.bson.types.ObjectId;
 
 import java.io.BufferedReader;
 import java.util.Map;
@@ -28,7 +26,7 @@ import java.util.Map;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Bulk load documents in elasticsearch using Kestra Internal Storage file"
+    title = "Execute [Bulk](https://www.mongodb.com/docs/manual/reference/method/Bulk/) request in MongoDB"
 )
 @Plugin(
     examples = {
@@ -47,10 +45,10 @@ public class Bulk extends AbstractLoad {
     @Override
     protected Flowable<WriteModel<Bson>> source(RunContext runContext, BufferedReader inputStream) {
         return Flowable
-            .create(this.esNdJSonReader(inputStream), BackpressureStrategy.BUFFER);
+            .create(this.ndJSonReader(inputStream), BackpressureStrategy.BUFFER);
     }
 
-    public FlowableOnSubscribe<WriteModel<Bson>> esNdJSonReader(BufferedReader input) {
+    public FlowableOnSubscribe<WriteModel<Bson>> ndJSonReader(BufferedReader input) {
         return s -> {
             String row;
 
