@@ -24,7 +24,7 @@ jobs:
       - name: Build the docker-compose stack
         run: |
           docker-compose -f docker-compose-ci.yml up -d
-          sleep 5
+          sleep 10
           curl -s -o .github/workflows/mongo_data.jsonl https://raw.githubusercontent.com/ozlerhakan/mongodb-json-files/master/datasets/books.json
           docker exec plugin-mongodb_mongo_1 sh -c "mongoimport --authenticationDatabase admin -c books  "mongodb://root:example@localhost/samples" /tmp/docker/mongo_data.jsonl > /dev/null"
 
@@ -105,7 +105,7 @@ jobs:
           fields: repo,message,commit,author,action,eventName,ref,workflow,job,took
           username: GitHub Actions
           icon_emoji: ':github-actions:'
-          channel: '#git'
+          channel: 'C02DQ1A7JLR'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
