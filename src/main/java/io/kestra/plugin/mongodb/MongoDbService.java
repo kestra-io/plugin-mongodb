@@ -9,6 +9,7 @@ import org.bson.BsonValue;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.AbstractMap;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -62,7 +63,8 @@ public abstract class MongoDbService {
                         e.getKey(),
                         map(e.getValue())
                     ))
-                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+                    // https://bugs.openjdk.java.net/browse/JDK-8148463
+                    .collect(HashMap::new, (m, v) -> m.put(v.getKey(), v.getValue()), HashMap::putAll);
             case ARRAY:
                 return doc.asArray()
                     .stream()
