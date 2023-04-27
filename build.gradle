@@ -53,7 +53,7 @@ dependencies {
     // kestra
     compileOnly group: "io.kestra", name: "core", version: kestraVersion
 
-    api 'org.mongodb:mongodb-driver-sync:4.9.0'
+    api 'org.mongodb:mongodb-driver-sync:4.9.1'
 }
 
 
