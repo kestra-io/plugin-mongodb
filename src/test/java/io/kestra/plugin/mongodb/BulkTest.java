@@ -46,7 +46,7 @@ class BulkTest {
             output.write(("{ replaceOne : {\"filter\" : { \"char\" : \"Meldane\" },\"replacement\" : { \"char\" : \"Tanys\", \"class\" : \"oracle\", \"lvl\": 4 }} }\n").getBytes(StandardCharsets.UTF_8));
         }
 
-        URI uri = storageInterface.put(URI.create("/" + IdUtils.create() + ".ion"), new FileInputStream(tempFile));
+        URI uri = storageInterface.put(null, URI.create("/" + IdUtils.create() + ".ion"), new FileInputStream(tempFile));
 
         Bulk put = Bulk.builder()
             .connection(MongoDbConnection.builder()
