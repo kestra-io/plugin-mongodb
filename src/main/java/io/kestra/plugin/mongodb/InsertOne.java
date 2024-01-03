@@ -17,7 +17,7 @@ import org.bson.conversions.Bson;
 import org.slf4j.Logger;
 
 import java.util.Objects;
-import javax.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotNull;
 
 @SuperBuilder
 @ToString
