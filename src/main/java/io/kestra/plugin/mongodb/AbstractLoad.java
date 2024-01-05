@@ -8,7 +8,6 @@ import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.models.tasks.RunnableTask;
 import io.kestra.core.runners.RunContext;
-import io.reactivex.Flowable;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
@@ -23,6 +22,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import jakarta.validation.constraints.NotNull;
+import reactor.core.publisher.Flux;
 
 @SuperBuilder
 @ToString
@@ -44,7 +44,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
     @Builder.Default
     private Integer chunk = 1000;
 
-    abstract protected Flowable<WriteModel<Bson>> source(RunContext runContext, BufferedReader inputStream);
+    abstract protected Flux<WriteModel<Bson>> source(RunContext runContext, BufferedReader inputStream) throws Exception;
 
     @Override
     public Output run(RunContext runContext) throws Exception {
@@ -63,7 +63,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
             AtomicInteger modifiedCount = new AtomicInteger();
             AtomicInteger deletedCount = new AtomicInteger();
 
-            Flowable<BulkWriteResult> flowable = this.source(runContext, inputStream)
+            Flux<BulkWriteResult> flowable = this.source(runContext, inputStream)
                 .doOnNext(docWriteRequest -> {
                     count.incrementAndGet();
                 })
@@ -81,7 +81,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
                 });
 
             // metrics & finalize
-            Long requestCount = flowable.count().blockingGet();
+            Long requestCount = flowable.count().block();
             runContext.metric(Counter.of(
                 "requests.count", requestCount,
                 "database", collection.getNamespace().getDatabaseName(),

@@ -8,8 +8,6 @@ import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.FileSerde;
 import io.kestra.core.serializers.JacksonMapper;
-import io.reactivex.BackpressureStrategy;
-import io.reactivex.Flowable;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
@@ -17,9 +15,13 @@ import org.bson.BsonDocument;
 import org.bson.BsonObjectId;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 
 import java.io.BufferedReader;
 import java.util.Map;
+
+import static io.kestra.core.utils.Rethrow.throwFunction;
 
 @SuperBuilder
 @ToString
@@ -58,10 +60,10 @@ public class Load extends AbstractLoad {
 
     @SuppressWarnings("unchecked")
     @Override
-    protected Flowable<WriteModel<Bson>> source(RunContext runContext, BufferedReader inputStream) {
-        return Flowable
-            .create(FileSerde.reader(inputStream), BackpressureStrategy.BUFFER)
-            .map(o -> {
+    protected Flux<WriteModel<Bson>> source(RunContext runContext, BufferedReader inputStream) throws Exception {
+        return Flux
+            .create(FileSerde.reader(inputStream), FluxSink.OverflowStrategy.BUFFER)
+            .map(throwFunction(o -> {
                 Map<String, Object> values = (Map<String, Object>) o;
 
                 if (this.idKey != null) {
@@ -80,6 +82,6 @@ public class Load extends AbstractLoad {
                 return new InsertOneModel<>(
                     BsonDocument.parse(JacksonMapper.ofJson().writeValueAsString(values))
                 );
-            });
+            }));
     }
 }
