@@ -4,9 +4,6 @@ import com.mongodb.client.model.*;
 import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.runners.RunContext;
-import io.reactivex.BackpressureStrategy;
-import io.reactivex.Flowable;
-import io.reactivex.FlowableOnSubscribe;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -16,9 +13,15 @@ import lombok.experimental.SuperBuilder;
 import org.bson.BsonDocument;
 import org.bson.BsonValue;
 import org.bson.conversions.Bson;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.util.Map;
+import java.util.function.Consumer;
+
+import static io.kestra.core.utils.Rethrow.throwConsumer;
 
 @SuperBuilder
 @ToString
@@ -43,13 +46,13 @@ import java.util.Map;
 )
 public class Bulk extends AbstractLoad {
     @Override
-    protected Flowable<WriteModel<Bson>> source(RunContext runContext, BufferedReader inputStream) {
-        return Flowable
-            .create(this.ndJSonReader(inputStream), BackpressureStrategy.BUFFER);
+    protected Flux<WriteModel<Bson>> source(RunContext runContext, BufferedReader inputStream) throws IOException {
+        return Flux
+            .create(this.ndJSonReader(inputStream), FluxSink.OverflowStrategy.BUFFER);
     }
 
-    public FlowableOnSubscribe<WriteModel<Bson>> ndJSonReader(BufferedReader input) {
-        return s -> {
+    public Consumer<FluxSink<WriteModel<Bson>>> ndJSonReader(BufferedReader input) throws IOException {
+        return throwConsumer(s -> {
             String row;
 
             while ((row = input.readLine()) != null) {
@@ -96,10 +99,10 @@ public class Bulk extends AbstractLoad {
                         throw new IllegalArgumentException("Invalid bulk request type on '" + row + "'");
                 }
 
-                s.onNext(docWriteRequest);
+                s.next(docWriteRequest);
             }
 
-            s.onComplete();
-        };
+            s.complete();
+        });
     }
 }
