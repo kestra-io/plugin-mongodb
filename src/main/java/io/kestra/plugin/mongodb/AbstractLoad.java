@@ -32,14 +32,14 @@ import javax.validation.constraints.NotNull;
 @NoArgsConstructor
 public abstract class AbstractLoad extends AbstractTask implements RunnableTask<AbstractLoad.Output> {
     @Schema(
-        title = "The source file"
+        title = "The source file."
     )
     @PluginProperty(dynamic = true)
     @NotNull
     private String from;
 
     @Schema(
-        title = "The size of chunk for every bulk request"
+        title = "Chunk size for every bulk request."
     )
     @PluginProperty(dynamic = true)
     @Builder.Default
@@ -95,7 +95,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
             ));
 
             logger.info(
-                "Successfully send {} requests for {} records",
+                "Successfully sent {} requests for {} records",
                 requestCount,
                 count.get()
             );
@@ -114,7 +114,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
     @Getter
     public static class Output implements io.kestra.core.models.tasks.Output {
         @Schema(
-            title = "The size of the rows processed"
+            title = "The number of rows processed."
         )
         private Long size;
 

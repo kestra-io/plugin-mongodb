@@ -25,7 +25,7 @@ import javax.validation.constraints.NotNull;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Delete one or many documents"
+    title = "Delete one or many documents from a MongoDB collection."
 )
 @Plugin(
     examples = {
@@ -45,14 +45,14 @@ import javax.validation.constraints.NotNull;
 )
 public class Delete extends AbstractTask implements RunnableTask<Delete.Output> {
     @Schema(
-        title = "The mongodb bson filter",
-        description = "Can be a bson string, or a map"
+        title = "MongoDB BSON filter.",
+        description = "Can be a BSON string, or a map."
     )
     @PluginProperty(dynamic = true)
     private Object filter;
 
     @Schema(
-        title = "Operation to use"
+        title = "Operation to use."
     )
     @PluginProperty(dynamic = false)
     @Builder.Default
@@ -100,7 +100,7 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
     @Getter
     public static class Output implements io.kestra.core.models.tasks.Output {
         @Schema(
-            title = "true if the write was acknowledged."
+            title = "Whether the write was acknowledged."
         )
         private Boolean wasAcknowledged;
 

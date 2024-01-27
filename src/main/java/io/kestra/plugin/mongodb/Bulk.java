@@ -26,7 +26,7 @@ import java.util.Map;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Execute [Bulk](https://www.mongodb.com/docs/manual/reference/method/Bulk/) request in MongoDB"
+    title = "Execute [Bulk](https://www.mongodb.com/docs/manual/reference/method/Bulk/) request in MongoDB."
 )
 @Plugin(
     examples = {
