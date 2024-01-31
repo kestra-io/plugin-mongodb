@@ -24,20 +24,20 @@ import jakarta.validation.constraints.NotNull;
 @NoArgsConstructor
 public abstract class AbstractTask extends Task {
     @Schema(
-        title = "The connection properties."
+        title = "MongoDB connection properties."
     )
     @NotNull
     protected MongoDbConnection connection;
 
     @Schema(
-        title = "The mongodb database."
+        title = "MongoDB database."
     )
     @PluginProperty(dynamic = true)
     @NotNull
     protected String database;
 
     @Schema(
-        title = "The mongodb collection."
+        title = "MongoDB collection."
     )
     @PluginProperty(dynamic = true)
     @NotNull

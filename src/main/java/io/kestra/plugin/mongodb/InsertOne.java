@@ -25,12 +25,12 @@ import jakarta.validation.constraints.NotNull;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Insert one document"
+    title = "Insert a document into a MongoDB collection."
 )
 @Plugin(
     examples = {
         @Example(
-            title = "Insert a document with a map",
+            title = "Insert a document with a map.",
             code = {
                 "connection:",
                 "  uri: \"mongodb://root:example@localhost:27017/?authSource=admin\"",
@@ -44,7 +44,7 @@ import jakarta.validation.constraints.NotNull;
             }
         ),
         @Example(
-            title = "Insert a document from a json string",
+            title = "Insert a document from a JSON string.",
             code = {
                 "connection:",
                 "  uri: \"mongodb://root:example@localhost:27017/?authSource=admin\"",
@@ -57,8 +57,8 @@ import jakarta.validation.constraints.NotNull;
 )
 public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Output> {
     @Schema(
-        title = "The mongodb document",
-        description = "Can be a bson string, or a map"
+        title = "MongoDB document.",
+        description = "Can be a BSON string, or a map."
     )
     @PluginProperty(dynamic = true)
     @NotNull
@@ -93,12 +93,12 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
     @Getter
     public static class Output implements io.kestra.core.models.tasks.Output {
         @Schema(
-            title = "The inserted Id"
+            title = "The inserted ID."
         )
         private String insertedId;
 
         @Schema(
-            title = "true if the write was acknowledged."
+            title = "Whether the write was acknowledged."
         )
         private Boolean wasAcknowledged;
     }

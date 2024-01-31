@@ -20,8 +20,8 @@ import jakarta.validation.constraints.NotNull;
 @Introspected
 public class MongoDbConnection {
     @Schema(
-        title = "Connection string to mongodb server ",
-        description = "[url format](https://docs.mongodb.com/manual/reference/connection-string/) " +
+        title = "Connection string to MongoDB server.",
+        description = "[URL format](https://docs.mongodb.com/manual/reference/connection-string/) " +
             "like `mongodb://mongodb0.example.com:27017`"
     )
     @PluginProperty(dynamic = true)

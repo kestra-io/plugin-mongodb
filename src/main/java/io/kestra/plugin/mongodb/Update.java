@@ -26,12 +26,12 @@ import jakarta.validation.constraints.NotNull;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Update or Replace one or many documents"
+    title = "Update or Replace one or many documents in a MongoDB collection."
 )
 @Plugin(
     examples = {
         @Example(
-            title = "Replace a document",
+            title = "Replace a document.",
             code = {
                 "connection:",
                 "  uri: \"mongodb://root:example@localhost:27017/?authSource=admin\"",
@@ -49,7 +49,7 @@ import jakarta.validation.constraints.NotNull;
             }
         ),
         @Example(
-            title = "Update a document",
+            title = "Update a document.",
             code = {
                 "connection:",
                 "  uri: \"mongodb://root:example@localhost:27017/?authSource=admin\"",
@@ -65,23 +65,23 @@ import jakarta.validation.constraints.NotNull;
 )
 public class Update extends AbstractTask implements RunnableTask<Update.Output> {
     @Schema(
-        title = "The mongodb document",
-        description = "Can be a bson string, or a map"
+        title = "MongoDB document.",
+        description = "Can be a BSON string, or a map."
     )
     @PluginProperty(dynamic = true)
     @NotNull
     private Object document;
 
     @Schema(
-        title = "The mongodb bson filter",
-        description = "Can be a bson string, or a map"
+        title = "MongoDB BSON filter.",
+        description = "Can be a BSON string, or a map."
     )
     @PluginProperty(dynamic = true)
     @NotNull
     private Object filter;
 
     @Schema(
-        title = "Operation to use"
+        title = "Operation to use."
     )
     @PluginProperty(dynamic = false)
     @Builder.Default
@@ -134,14 +134,14 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
     @Getter
     public static class Output implements io.kestra.core.models.tasks.Output {
         @Schema(
-            title = "The upserted Id",
-            description = "Will be null if `replace` operation"
+            title = "The upserted ID.",
+            description = "Will be null for `replace` operation."
         )
         @Nullable
         private String upsertedId;
 
         @Schema(
-            title = "true if the write was acknowledged."
+            title = "Whether the write was acknowledged."
         )
         private Boolean wasAcknowledged;
 

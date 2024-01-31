@@ -35,7 +35,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Find documents"
+    title = "Find documents from a MongoDB collection."
 )
 @Plugin(
     examples = {
@@ -54,41 +54,41 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 )
 public class Find extends AbstractTask implements RunnableTask<Find.Output> {
     @Schema(
-        title = "The mongodb bson filter",
-        description = "Can be a bson string, or a map"
+        title = "MongoDB BSON filter.",
+        description = "Can be a BSON string, or a map."
     )
     @PluginProperty(dynamic = true)
     private Object filter;
 
     @Schema(
-        title = "The mongodb bson projection",
-        description = "Can be a bson string, or a map"
+        title = "MongoDB BSON projection.",
+        description = "Can be a BSON string, or a map."
     )
     @PluginProperty(dynamic = true)
     private Object projection;
 
     @Schema(
-        title = "The mongodb bson sort",
-        description = "Can be a bson string, or a map"
+        title = "MongoDB BSON sort.",
+        description = "Can be a BSON string, or a map."
     )
     @PluginProperty(dynamic = true)
     private Object sort;
 
     @Schema(
-        title = "The number of records to return"
+        title = "The number of records to return."
     )
     @PluginProperty(dynamic = true)
     private Integer limit;
 
     @Schema(
-        title = "The number of records to skip"
+        title = "The number of records to skip."
     )
     @PluginProperty(dynamic = true)
     private Integer skip;
 
 
     @Schema(
-        title = "Whether to store the data from the query result into an ion serialized data file"
+        title = "Whether to store the data from the query result into an ion serialized data file."
     )
     @PluginProperty(dynamic = false)
     @Builder.Default
@@ -189,19 +189,19 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
     @Getter
     public static class Output implements io.kestra.core.models.tasks.Output {
         @Schema(
-            title = "List containing the fetched data",
+            title = "List containing the fetched data.",
             description = "Only populated if `store` parameter is set to false."
         )
         private List<Object> rows;
 
         @Schema(
-            title = "The size of the rows fetch"
+            title = "The number of rows fetched."
         )
         private Long size;
 
         @Schema(
-            title = "The uri of store result",
-            description = "Only populated if `store` is set to true."
+            title = "URI of the file containing the fetched results.",
+            description = "Only populated if `store` parameter is set to true."
         )
         private URI uri;
     }

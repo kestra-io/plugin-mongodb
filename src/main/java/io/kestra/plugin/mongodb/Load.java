@@ -29,7 +29,7 @@ import static io.kestra.core.utils.Rethrow.throwFunction;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Bulk load documents in MongoDB using Kestra Internal Storage file"
+    title = "Bulk load documents in MongoDB using Kestra internal storage file."
 )
 @Plugin(
     examples = {
@@ -46,13 +46,13 @@ import static io.kestra.core.utils.Rethrow.throwFunction;
 )
 public class Load extends AbstractLoad {
     @Schema(
-        title = "Use this key as id."
+        title = "Use this key as ID."
     )
     @PluginProperty(dynamic = true)
     private String idKey;
 
     @Schema(
-        title = "Remove idKey from the final document"
+        title = "Whether to remove idKey from the final document."
     )
     @PluginProperty(dynamic = true)
     @Builder.Default
