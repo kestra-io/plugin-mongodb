@@ -90,7 +90,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
     @Schema(
         title = "Whether to store the data from the query result into an ion serialized data file."
     )
-    @PluginProperty(dynamic = false)
+    @PluginProperty
     @Builder.Default
     private Boolean store = false;
 
@@ -102,6 +102,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
             MongoCollection<BsonDocument> collection = this.collection(runContext, client, BsonDocument.class);
 
             BsonDocument bsonFilter = MongoDbService.toDocument(runContext, this.filter);
+            logger.debug("Find: {}", bsonFilter);
 
             FindIterable<BsonDocument> find = collection.find(bsonFilter);
 
@@ -120,8 +121,6 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
             if (this.skip != null) {
                 find.skip(this.skip);
             }
-
-            logger.debug("Find: {}", find);
 
             Output.OutputBuilder builder = Output.builder();
 
