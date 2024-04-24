@@ -5,7 +5,6 @@ import com.mongodb.client.MongoClients;
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.runners.RunContext;
-import io.micronaut.core.annotation.Introspected;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -17,7 +16,6 @@ import jakarta.validation.constraints.NotNull;
 @SuperBuilder
 @NoArgsConstructor
 @Getter
-@Introspected
 public class MongoDbConnection {
     @Schema(
         title = "Connection string to MongoDB server.",

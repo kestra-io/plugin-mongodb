@@ -9,7 +9,6 @@ import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.models.tasks.RunnableTask;
 import io.kestra.core.runners.RunContext;
-import io.micronaut.core.annotation.Introspected;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
@@ -90,7 +89,6 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
         }
     }
 
-    @Introspected
     public enum Operation {
         DELETE_ONE,
         DELETE_MANY
