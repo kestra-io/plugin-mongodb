@@ -163,7 +163,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         }
 
         return Pair.of(
-            runContext.putTempFile(tempFile),
+            runContext.storage().putFile(tempFile),
             count.get()
         );
     }

@@ -53,7 +53,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
 
         try (
             MongoClient client = this.connection.client(runContext);
-            BufferedReader inputStream = new BufferedReader(new InputStreamReader(runContext.uriToInputStream(from)))
+            BufferedReader inputStream = new BufferedReader(new InputStreamReader(runContext.storage().getFile(from)))
         ) {
             MongoCollection<Bson> collection = this.collection(runContext, client);
 
