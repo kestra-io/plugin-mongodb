@@ -82,6 +82,7 @@ dependencies {
     // kestra
     testAnnotationProcessor group: "io.kestra", name: "processor", version: kestraVersion
     testImplementation group: "io.kestra", name: "core", version: kestraVersion
+    testImplementation group: "io.kestra", name: "core", version: kestraVersion, classifier: "tests"
     testImplementation group: "io.kestra", name: "storage-local", version: kestraVersion
 
     // test
