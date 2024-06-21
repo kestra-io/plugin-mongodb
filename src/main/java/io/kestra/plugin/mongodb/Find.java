@@ -152,7 +152,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
     }
 
     private Pair<URI, Long> store(RunContext runContext, FindIterable<BsonDocument> documents) throws IOException {
-        File tempFile = runContext.tempFile(".ion").toFile();
+        File tempFile = runContext.workingDir().createTempFile(".ion").toFile();
         AtomicLong count = new AtomicLong();
 
         try (OutputStream output = new FileOutputStream(tempFile)) {
