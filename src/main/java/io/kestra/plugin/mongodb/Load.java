@@ -16,7 +16,6 @@ import org.bson.BsonObjectId;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.FluxSink;
 
 import java.io.BufferedReader;
 import java.util.Map;
@@ -61,8 +60,7 @@ public class Load extends AbstractLoad {
     @SuppressWarnings("unchecked")
     @Override
     protected Flux<WriteModel<Bson>> source(RunContext runContext, BufferedReader inputStream) throws Exception {
-        return Flux
-            .create(FileSerde.reader(inputStream), FluxSink.OverflowStrategy.BUFFER)
+        return FileSerde.readAll(inputStream)
             .map(throwFunction(o -> {
                 Map<String, Object> values = (Map<String, Object>) o;
 
