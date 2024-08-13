@@ -17,11 +17,10 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.bson.BsonDocument;
 import org.bson.conversions.Bson;
 import org.slf4j.Logger;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
+import java.io.*;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
@@ -153,19 +152,16 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
 
     private Pair<URI, Long> store(RunContext runContext, FindIterable<BsonDocument> documents) throws IOException {
         File tempFile = runContext.workingDir().createTempFile(".ion").toFile();
-        AtomicLong count = new AtomicLong();
 
-        try (OutputStream output = new FileOutputStream(tempFile)) {
-            documents.forEach(throwConsumer(bsonDocument -> {
-                count.incrementAndGet();
-                FileSerde.write(output, MongoDbService.map(bsonDocument.toBsonDocument()));
-            }));
+        try (var output = new BufferedWriter(new FileWriter(tempFile), FileSerde.BUFFER_SIZE)) {
+            var flux = Flux.fromIterable(documents).map(document -> MongoDbService.map(document.toBsonDocument()));
+            Mono<Long> longMono = FileSerde.writeAll(output, flux);
+
+            return Pair.of(
+                runContext.storage().putFile(tempFile),
+                longMono.block()
+            );
         }
-
-        return Pair.of(
-            runContext.storage().putFile(tempFile),
-            count.get()
-        );
     }
 
     private Pair<ArrayList<Object>, Long> fetch(FindIterable<BsonDocument> documents) {
