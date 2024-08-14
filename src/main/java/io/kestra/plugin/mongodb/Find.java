@@ -155,11 +155,11 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
 
         try (var output = new BufferedWriter(new FileWriter(tempFile), FileSerde.BUFFER_SIZE)) {
             var flux = Flux.fromIterable(documents).map(document -> MongoDbService.map(document.toBsonDocument()));
-            Mono<Long> longMono = FileSerde.writeAll(output, flux);
+            Long count = FileSerde.writeAll(output, flux).block();
 
             return Pair.of(
                 runContext.storage().putFile(tempFile),
-                longMono.block()
+                count
             );
         }
     }
