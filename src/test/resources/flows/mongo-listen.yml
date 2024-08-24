@@ -1,0 +1,25 @@
+id: mongo-listen
+namespace: io.kestra.tests
+
+triggers:
+  - id: watch
+    type: io.kestra.plugin.mongodb.Trigger
+    connection:
+      uri: mongodb://root:example@localhost:27017/?authSource=admin
+    database: samples
+    collection: books
+    filter:
+      pageCount:
+        $gt: 50
+    sort:
+      pageCount: -1
+    projection:
+      title: 1
+      publishedDate: 1
+      pageCount: 1
+    interval: PT10S
+
+tasks:
+  - id: end
+    type: io.kestra.plugin.core.debug.Return
+    format: "{{task.id}} > {{taskrun.startDate}}"
