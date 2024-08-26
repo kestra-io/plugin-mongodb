@@ -20,12 +20,12 @@ import java.util.Optional;
 @Getter
 @NoArgsConstructor
 @Schema(
-	title = "Wait for that periodically queries a MongoDB collection and sends the results as a trigger output."
+	title = "Wait for query on a MongoDB collection."
 )
 @Plugin(
 	examples = {
 		@Example(
-			title = "Wait for find query to return results, and then iterate through rows.",
+			title = "Wait for a MongoDB query to return results, and then iterate through rows.",
 			full = true,
 			code = {
 				"triggers:",
