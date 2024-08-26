@@ -44,13 +44,24 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 @Plugin(
     examples = {
         @Example(
-            code = {
-                "connection:",
-                "  uri: \"mongodb://root:example@localhost:27017/?authSource=admin\"",
-                "database: \"my_database\"",
-                "collection: \"my_collection\"",
-                "from: \"{{ inputs.file }}\"",
-            }
+            full = true,
+            code = """
+                id: mongodb_bulk
+                namespace: company.team
+                
+                inputs:
+                  - id: file
+                    type: FILE
+                
+                tasks:
+                  - id: bulk
+                    type: io.kestra.plugin.mongodb.Bulk
+                    connection:
+                      uri: "mongodb://root:example@localhost:27017/?authSource=admin"
+                    database: "my_database"
+                    collection: "my_collection"
+                    from: "{{ inputs.file }}"
+                """
         )
     }
 )

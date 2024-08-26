@@ -31,34 +31,48 @@ import jakarta.validation.constraints.NotNull;
     examples = {
         @Example(
             title = "Replace a document.",
-            code = {
-                "connection:",
-                "  uri: \"mongodb://root:example@localhost:27017/?authSource=admin\"",
-                "database: \"my_database\"",
-                "collection: \"my_collection\"",
-                "operation: \"REPLACE_ONE\"",
-                "document:",
-                "  _id:",
-                "    $oid: 60930c39a982931c20ef6cd6",
-                "  name: \"John Doe\"",
-                "  city: \"Paris\"",
-                "filter:",
-                "  _id:",
-                "    $oid: 60930c39a982931c20ef6cd6",
-            }
+            full = true,
+            code = """
+                id: mongodb_update
+                namespace: company.team
+                
+                tasks:
+                  - id: update
+                    type: io.kestra.plugin.mongodb.Update
+                    connection:
+                      uri: "mongodb://root:example@localhost:27017/?authSource=admin"
+                    database: "my_database"
+                    collection: "my_collection"
+                    operation: "REPLACE_ONE"
+                    document:
+                      _id:
+                        $oid: 60930c39a982931c20ef6cd6
+                      name: "John Doe"
+                      city: "Paris"
+                    filter:
+                      _id:
+                        $oid: 60930c39a982931c20ef6cd6
+                """
         ),
         @Example(
             title = "Update a document.",
-            code = {
-                "connection:",
-                "  uri: \"mongodb://root:example@localhost:27017/?authSource=admin\"",
-                "database: \"my_database\"",
-                "collection: \"my_collection\"",
-                "filter:",
-                "  _id:",
-                "    $oid: 60930c39a982931c20ef6cd6",
-                "document: \"{\"$set\": { \"tags\": [\"blue\", \"green\", \"red\"]}}\""
-            }
+            full = true,
+            code = """
+                id: mongodb_update
+                namespace: company.team
+                
+                tasks:
+                  - id: update
+                    type: io.kestra.plugin.mongodb.Update
+                    connection:
+                      uri: "mongodb://root:example@localhost:27017/?authSource=admin"
+                    database: "my_database"
+                    collection: "my_collection"
+                    filter:
+                      _id:
+                        $oid: 60930c39a982931c20ef6cd6
+                    document: "{"$set": { "tags": ["blue", "green", "red"]}}"
+                """
         ),
     }
 )

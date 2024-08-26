@@ -39,15 +39,22 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 @Plugin(
     examples = {
         @Example(
-            code = {
-                "connection:",
-                "  uri: \"mongodb://root:example@localhost:27017/?authSource=admin\"",
-                "database: \"my_database\"",
-                "collection: \"my_collection\"",
-                "filter:",
-                "  _id:",
-                "    $oid: 60930c39a982931c20ef6cd6",
-            }
+            full = true,
+            code = """
+                id: mongodb_find
+                namespace: company.team
+                
+                tasks:
+                  - id: find
+                    type: io.kestra.plugin.mongodb.Find
+                    connection:
+                      uri: "mongodb://root:example@localhost:27017/?authSource=admin"
+                    database: "my_database"
+                    collection: "my_collection"
+                    filter:
+                      _id:
+                        $oid: 60930c39a982931c20ef6cd6
+                """
         ),
     }
 )

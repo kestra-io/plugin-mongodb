@@ -33,13 +33,24 @@ import static io.kestra.core.utils.Rethrow.throwFunction;
 @Plugin(
     examples = {
         @Example(
-            code = {
-                "connection:",
-                "  uri: \"mongodb://root:example@localhost:27017/?authSource=admin\"",
-                "database: \"my_database\"",
-                "collection: \"my_collection\"",
-                "from: \"{{ inputs.file }}\"",
-            }
+            full = true,
+            code = """
+                id: mongodb_load
+                namespace: company.team
+
+                inputs:
+                  - id: file
+                    type: FILE
+                
+                tasks:
+                  - id: load
+                    type: io.kestra.plugin.mongodb.Load
+                    connection:
+                      uri: "mongodb://root:example@localhost:27017/?authSource=admin"
+                    database: "my_database"
+                    collection: "my_collection"
+                    from: "{{ inputs.file }}"
+                """
         )
     }
 )
