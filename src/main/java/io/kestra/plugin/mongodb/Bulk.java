@@ -50,7 +50,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
                 namespace: company.team
                 
                 inputs:
-                  - id: file
+                  - id: myfile
                     type: FILE
                 
                 tasks:
@@ -60,7 +60,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
                       uri: "mongodb://root:example@localhost:27017/?authSource=admin"
                     database: "my_database"
                     collection: "my_collection"
-                    from: "{{ inputs.file }}"
+                    from: "{{ inputs.myfile }}"
                 """
         )
     }
