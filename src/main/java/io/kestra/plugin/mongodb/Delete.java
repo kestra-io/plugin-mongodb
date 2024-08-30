@@ -29,16 +29,23 @@ import jakarta.validation.constraints.NotNull;
 @Plugin(
     examples = {
         @Example(
-            code = {
-                "connection:",
-                "  uri: \"mongodb://root:example@localhost:27017/?authSource=admin\"",
-                "database: \"my_database\"",
-                "collection: \"my_collection\"",
-                "operation: \"DELETE_ONE\"",
-                "filter:",
-                "  _id:",
-                "    $oid: 60930c39a982931c20ef6cd6",
-            }
+            full = true,
+            code = """
+                id: mongodb_delete
+                namespace: company.team
+
+                tasks:
+                  - id: delete
+                    type: io.kestra.plugin.mongodb.Delete
+                    connection:
+                      uri: "mongodb://root:example@localhost:27017/?authSource=admin"
+                    database: "my_database"
+                    collection: "my_collection"
+                    operation: "DELETE_ONE"
+                    filter:
+                      _id:
+                        $oid: 60930c39a982931c20ef6cd6
+                """
         ),
     }
 )

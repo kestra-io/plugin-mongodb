@@ -31,27 +31,41 @@ import jakarta.validation.constraints.NotNull;
     examples = {
         @Example(
             title = "Insert a document with a map.",
-            code = {
-                "connection:",
-                "  uri: \"mongodb://root:example@localhost:27017/?authSource=admin\"",
-                "database: \"my_database\"",
-                "collection: \"my_collection\"",
-                "document:",
-                "  _id:",
-                "    $oid: 60930c39a982931c20ef6cd6",
-                "  name: \"John Doe\"",
-                "  city: \"Paris\"",
-            }
+            full = true,
+            code = """
+                id: mongodb_insertone
+                namespace: company.team
+                
+                tasks:
+                  - id: insertone
+                    type: io.kestra.plugin.mongodb.InsertOne
+                    connection:
+                      uri: "mongodb://root:example@localhost:27017/?authSource=admin"
+                    database: "my_database"
+                    collection: "my_collection"
+                    document:
+                      _id:
+                        $oid: 60930c39a982931c20ef6cd6
+                      name: "John Doe"
+                      city: "Paris"   
+                """
         ),
         @Example(
             title = "Insert a document from a JSON string.",
-            code = {
-                "connection:",
-                "  uri: \"mongodb://root:example@localhost:27017/?authSource=admin\"",
-                "database: \"my_database\"",
-                "collection: \"my_collection\"",
-                "document: \"{{ outputs.task_id.data | json }}\""
-            }
+            full = true,
+            code = """
+                id: mongodb_insertone
+                namespace: company.team
+                
+                tasks:
+                  - id: insertone
+                    type: io.kestra.plugin.mongodb.InsertOne
+                    connection:
+                      uri: "mongodb://root:example@localhost:27017/?authSource=admin"
+                    database: "my_database"
+                    collection: "my_collection"
+                    document: "{{ outputs.task_id.data | json }}"
+                """
         ),
     }
 )
