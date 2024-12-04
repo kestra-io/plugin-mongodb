@@ -7,6 +7,7 @@ import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.metrics.Counter;
+import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.RunnableTask;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.FileSerde;
@@ -43,7 +44,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
             code = """
                 id: mongodb_find
                 namespace: company.team
-                
+
                 tasks:
                   - id: find
                     type: io.kestra.plugin.mongodb.Find
@@ -83,22 +84,19 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
     @Schema(
         title = "The number of records to return."
     )
-    @PluginProperty(dynamic = true)
-    private Integer limit;
+    private Property<Integer> limit;
 
     @Schema(
         title = "The number of records to skip."
     )
-    @PluginProperty(dynamic = true)
-    private Integer skip;
+    private Property<Integer> skip;
 
 
     @Schema(
         title = "Whether to store the data from the query result into an ion serialized data file."
     )
-    @PluginProperty
     @Builder.Default
-    private Boolean store = false;
+    private Property<Boolean> store = Property.of(false);
 
     @Override
     public Find.Output run(RunContext runContext) throws Exception {
@@ -120,17 +118,17 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
                 find.sort(MongoDbService.toDocument(runContext, this.sort));
             }
 
-            if (this.limit != null) {
-                find.limit(this.limit);
+            if (runContext.render(this.limit).as(Integer.class).isPresent()) {
+                find.limit(runContext.render(this.limit).as(Integer.class).get());
             }
 
-            if (this.skip != null) {
-                find.skip(this.skip);
+            if (runContext.render(this.skip).as(Integer.class).isPresent()) {
+                find.skip(runContext.render(this.skip).as(Integer.class).get());
             }
 
             Output.OutputBuilder builder = Output.builder();
 
-            if (this.store) {
+            if (runContext.render(this.store).as(Boolean.class).orElseThrow()) {
                 Pair<URI, Long> store = this.store(runContext, find);
 
                 builder

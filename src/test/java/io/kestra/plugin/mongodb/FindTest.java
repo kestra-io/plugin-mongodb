@@ -1,6 +1,7 @@
 package io.kestra.plugin.mongodb;
 
 import com.google.common.collect.ImmutableMap;
+import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.runners.RunContextFactory;
 import io.kestra.core.junit.annotations.KestraTest;
@@ -27,8 +28,8 @@ class FindTest {
             .connection(MongoDbConnection.builder()
                 .uri("mongodb://root:example@localhost:27017/?authSource=admin")
                 .build())
-            .database("samples")
-            .collection("books")
+            .database(Property.of("samples"))
+            .collection(Property.of("books"))
             .filter(ImmutableMap.of(
                 "pageCount", ImmutableMap.of("$gt", 600)
             ))

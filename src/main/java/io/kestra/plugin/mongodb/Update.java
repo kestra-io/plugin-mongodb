@@ -7,6 +7,7 @@ import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.metrics.Counter;
+import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.RunnableTask;
 import io.kestra.core.runners.RunContext;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -35,7 +36,7 @@ import jakarta.validation.constraints.NotNull;
             code = """
                 id: mongodb_update
                 namespace: company.team
-                
+
                 tasks:
                   - id: update
                     type: io.kestra.plugin.mongodb.Update
@@ -60,7 +61,7 @@ import jakarta.validation.constraints.NotNull;
             code = """
                 id: mongodb_update
                 namespace: company.team
-                
+
                 tasks:
                   - id: update
                     type: io.kestra.plugin.mongodb.Update
@@ -96,9 +97,8 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
     @Schema(
         title = "Operation to use."
     )
-    @PluginProperty(dynamic = false)
     @Builder.Default
-    private Operation operation = Operation.UPDATE_ONE;
+    private Property<Operation> operation = Property.of(Operation.UPDATE_ONE);
 
     @Override
     public Update.Output run(RunContext runContext) throws Exception {
@@ -111,9 +111,9 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
             BsonDocument bsonFilter = MongoDbService.toDocument(runContext, this.filter);
 
             UpdateResult updateResult;
-            if (this.operation == Operation.REPLACE_ONE) {
+            if (Operation.REPLACE_ONE.equals(runContext.render(operation).as(Operation.class).orElseThrow())) {
                 updateResult = collection.replaceOne(bsonFilter, bsonDocument);
-            } else if (this.operation == Operation.UPDATE_ONE) {
+            } else if (Operation.UPDATE_ONE.equals(runContext.render(operation).as(Operation.class).orElseThrow())) {
                 updateResult = collection.updateOne(bsonFilter, bsonDocument);
             } else {
                 updateResult = collection.updateMany(bsonFilter, bsonDocument);

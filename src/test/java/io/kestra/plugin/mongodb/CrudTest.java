@@ -1,6 +1,7 @@
 package io.kestra.plugin.mongodb;
 
 import com.google.common.collect.ImmutableMap;
+import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.runners.RunContextFactory;
 import io.kestra.core.utils.IdUtils;
@@ -28,8 +29,8 @@ class CrudTest {
 
         InsertOne insert = InsertOne.builder()
             .connection(MongoDbConnection.builder().uri("mongodb://root:example@localhost:27017/?authSource=admin").build())
-            .database(database)
-            .collection("insert")
+            .database(Property.of(database))
+            .collection(Property.of("insert"))
             .document(ImmutableMap.of(
                 "name", "{{ variable }}",
                 "tags", List.of("blue", "green", "red")
@@ -41,9 +42,9 @@ class CrudTest {
 
         Update update = Update.builder()
             .connection(MongoDbConnection.builder().uri("mongodb://root:example@localhost:27017/?authSource=admin").build())
-            .database(database)
-            .collection("insert")
-            .operation(Update.Operation.REPLACE_ONE)
+            .database(Property.of(database))
+            .collection(Property.of("insert"))
+            .operation(Property.of(Update.Operation.REPLACE_ONE))
             .document(ImmutableMap.of(
                 "name", "{{ variable }}",
                 "tags", List.of("green", "red")
@@ -59,8 +60,8 @@ class CrudTest {
 
         update = Update.builder()
             .connection(MongoDbConnection.builder().uri("mongodb://root:example@localhost:27017/?authSource=admin").build())
-            .database(database)
-            .collection("insert")
+            .database(Property.of(database))
+            .collection(Property.of("insert"))
             .document("{\"$set\": { \"tags\": [\"blue\", \"green\", \"red\"]}}")
             .filter(ImmutableMap.of(
                 "_id", ImmutableMap.of("$oid", insertOutput.getInsertedId())
@@ -74,8 +75,8 @@ class CrudTest {
             .connection(MongoDbConnection.builder()
                 .uri("mongodb://root:example@localhost:27017/?authSource=admin")
                 .build())
-            .database(database)
-            .collection("insert")
+            .database(Property.of(database))
+            .collection(Property.of("insert"))
             .filter(ImmutableMap.of(
                 "_id", ImmutableMap.of("$oid", insertOutput.getInsertedId())
             ))
@@ -89,8 +90,8 @@ class CrudTest {
             .connection(MongoDbConnection.builder()
                 .uri("mongodb://root:example@localhost:27017/?authSource=admin")
                 .build())
-            .database(database)
-            .collection("insert")
+            .database(Property.of(database))
+            .collection(Property.of("insert"))
             .filter(ImmutableMap.of(
                 "_id", ImmutableMap.of("$oid", insertOutput.getInsertedId())
             ))
