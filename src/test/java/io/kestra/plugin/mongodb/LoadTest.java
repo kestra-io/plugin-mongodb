@@ -1,6 +1,7 @@
 package io.kestra.plugin.mongodb;
 
 import com.google.common.collect.ImmutableMap;
+import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.runners.RunContextFactory;
 import io.kestra.core.serializers.FileSerde;
@@ -49,10 +50,10 @@ class LoadTest {
             .connection(MongoDbConnection.builder()
                 .uri("mongodb://root:example@localhost:27017/?authSource=admin")
                 .build())
-            .database(database)
-            .collection("load")
-            .from(uri.toString())
-            .chunk(10)
+            .database(Property.of(database))
+            .collection(Property.of("load"))
+            .from(Property.of(uri.toString()))
+            .chunk(Property.of(10))
             .build();
 
         Load.Output runOutput = put.run(runContext);

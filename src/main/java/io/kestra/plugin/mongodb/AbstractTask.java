@@ -5,6 +5,7 @@ import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.models.annotations.PluginProperty;
+import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.runners.RunContext;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -32,25 +33,23 @@ public abstract class AbstractTask extends Task {
     @Schema(
         title = "MongoDB database."
     )
-    @PluginProperty(dynamic = true)
     @NotNull
-    protected String database;
+    protected Property<String> database;
 
     @Schema(
         title = "MongoDB collection."
     )
-    @PluginProperty(dynamic = true)
     @NotNull
-    protected String collection;
+    protected Property<String> collection;
 
     protected MongoCollection<Bson> collection(RunContext runContext, MongoClient client) throws IllegalVariableEvaluationException {
         return this.collection(runContext, client, Bson.class);
     }
 
     protected <T> MongoCollection<T> collection(RunContext runContext, MongoClient client, Class<T> cls) throws IllegalVariableEvaluationException {
-        MongoDatabase database = client.getDatabase(runContext.render(this.database));
+        MongoDatabase database = client.getDatabase(runContext.render(this.database).as(String.class).orElseThrow());
         return database.getCollection(
-            runContext.render(this.collection),
+            runContext.render(this.collection).as(String.class).orElseThrow(),
             cls
         );
     }

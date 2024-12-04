@@ -5,6 +5,7 @@ import com.mongodb.client.model.WriteModel;
 import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.annotations.PluginProperty;
+import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.FileSerde;
 import io.kestra.core.serializers.JacksonMapper;
@@ -41,7 +42,7 @@ import static io.kestra.core.utils.Rethrow.throwFunction;
                 inputs:
                   - id: file
                     type: FILE
-                
+
                 tasks:
                   - id: load
                     type: io.kestra.plugin.mongodb.Load
@@ -58,15 +59,13 @@ public class Load extends AbstractLoad {
     @Schema(
         title = "Use this key as ID."
     )
-    @PluginProperty(dynamic = true)
-    private String idKey;
+    private Property<String> idKey;
 
     @Schema(
         title = "Whether to remove idKey from the final document."
     )
-    @PluginProperty(dynamic = true)
     @Builder.Default
-    private Boolean removeIdKey = true;
+    private Property<Boolean> removeIdKey = Property.of(true);
 
     @SuppressWarnings("unchecked")
     @Override
@@ -75,15 +74,15 @@ public class Load extends AbstractLoad {
             .map(throwFunction(o -> {
                 Map<String, Object> values = (Map<String, Object>) o;
 
-                if (this.idKey != null) {
-                    String idKey = runContext.render(this.idKey);
+                if (runContext.render(this.idKey).as(String.class).isPresent()) {
+                    String idKey = runContext.render(this.idKey).as(String.class).get();
 
                     values.put(
                         "_id",
                         new BsonObjectId(new ObjectId(values.get(idKey).toString()))
                     );
 
-                    if (this.removeIdKey) {
+                    if (runContext.render(this.removeIdKey).as(Boolean.class).orElseThrow()) {
                         values.remove(idKey);
                     }
                 }

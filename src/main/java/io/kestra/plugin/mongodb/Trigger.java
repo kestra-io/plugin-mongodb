@@ -4,6 +4,7 @@ import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.conditions.ConditionContext;
 import io.kestra.core.models.executions.Execution;
+import io.kestra.core.models.property.Property;
 import io.kestra.core.models.triggers.*;
 import io.kestra.core.runners.RunContext;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -39,7 +40,7 @@ import java.util.Optional;
                       - id: return
                         type: io.kestra.plugin.core.debug.Return
                         format: "{{ json(taskrun.value) }}"
-                
+
                 triggers:
                   - id: watch
                     type: io.kestra.plugin.mongodb.Trigger
@@ -68,9 +69,9 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
     private MongoDbConnection connection;
 
-    private String database;
+    private Property<String> database;
 
-    private String collection;
+    private Property<String> collection;
 
     private Object filter;
 
@@ -78,12 +79,12 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
     private Object sort;
 
-    private Integer limit;
+    private Property<Integer> limit;
 
-    private Integer skip;
+    private Property<Integer> skip;
 
     @Builder.Default
-    private Boolean store = false;
+    private Property<Boolean> store = Property.of(false);
 
     @Override
     public Optional<Execution> evaluate(ConditionContext conditionContext, TriggerContext context) throws Exception {

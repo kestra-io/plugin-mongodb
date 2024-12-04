@@ -7,6 +7,7 @@ import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.metrics.Counter;
+import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.RunnableTask;
 import io.kestra.core.runners.RunContext;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -60,10 +61,9 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
     @Schema(
         title = "Operation to use."
     )
-    @PluginProperty(dynamic = false)
     @Builder.Default
     @NotNull
-    private Operation operation = Operation.DELETE_ONE;
+    private Property<Operation> operation = Property.of(Operation.DELETE_ONE);
 
     @Override
     public Delete.Output run(RunContext runContext) throws Exception {
@@ -75,7 +75,7 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
             BsonDocument bsonFilter = MongoDbService.toDocument(runContext, this.filter);
 
             DeleteResult deleteResult;
-            if (this.operation == Operation.DELETE_ONE) {
+            if (Operation.DELETE_ONE.equals(runContext.render(this.operation).as(Operation.class).orElseThrow())) {
                 deleteResult = collection.deleteOne(bsonFilter);
             } else {
                 deleteResult = collection.deleteMany(bsonFilter);

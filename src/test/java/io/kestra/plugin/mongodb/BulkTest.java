@@ -1,5 +1,6 @@
 package io.kestra.plugin.mongodb;
 
+import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.runners.RunContextFactory;
 import io.kestra.core.storages.StorageInterface;
@@ -55,10 +56,10 @@ class BulkTest {
             .connection(MongoDbConnection.builder()
                 .uri("mongodb://root:example@localhost:27017/?authSource=admin")
                 .build())
-            .database(database)
-            .collection("bulk")
-            .from(uri.toString())
-            .chunk(10)
+            .database(Property.of(database))
+            .collection(Property.of("bulk"))
+            .from(Property.of(uri.toString()))
+            .chunk(Property.of(10))
             .build();
 
         Bulk.Output runOutput = put.run(runContext);

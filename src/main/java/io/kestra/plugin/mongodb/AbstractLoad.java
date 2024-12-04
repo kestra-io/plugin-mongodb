@@ -6,6 +6,7 @@ import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.WriteModel;
 import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.metrics.Counter;
+import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.RunnableTask;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.FileSerde;
@@ -34,23 +35,21 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
     @Schema(
         title = "The source file."
     )
-    @PluginProperty(dynamic = true)
     @NotNull
-    private String from;
+    private Property<String> from;
 
     @Schema(
         title = "Chunk size for every bulk request."
     )
-    @PluginProperty(dynamic = true)
     @Builder.Default
-    private Integer chunk = 1000;
+    private Property<Integer> chunk = Property.of(1000);
 
     abstract protected Flux<WriteModel<Bson>> source(RunContext runContext, BufferedReader inputStream) throws Exception;
 
     @Override
     public Output run(RunContext runContext) throws Exception {
         Logger logger = runContext.logger();
-        URI from = new URI(runContext.render(this.from));
+        URI from = new URI(runContext.render(this.from).as(String.class).orElseThrow());
 
         try (
             MongoClient client = this.connection.client(runContext);
@@ -64,11 +63,12 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
             AtomicInteger modifiedCount = new AtomicInteger();
             AtomicInteger deletedCount = new AtomicInteger();
 
+            var renderedChunk = runContext.render(this.chunk).as(Integer.class).orElse(null);
             Flux<BulkWriteResult> flowable = this.source(runContext, inputStream)
                 .doOnNext(docWriteRequest -> {
                     count.incrementAndGet();
                 })
-                .buffer(this.chunk, this.chunk)
+                .buffer(renderedChunk, renderedChunk)
                 .map(indexRequests -> {
                     List<WriteModel<Bson>> bulkOperations = new ArrayList<>(indexRequests);
 
