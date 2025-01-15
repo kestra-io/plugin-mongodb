@@ -28,7 +28,7 @@ class CrudTest {
         String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
 
         InsertOne insert = InsertOne.builder()
-            .connection(MongoDbConnection.builder().uri("mongodb://root:example@localhost:27017/?authSource=admin").build())
+            .connection(MongoDbConnection.builder().uri(Property.of("mongodb://root:example@localhost:27017/?authSource=admin")).build())
             .database(Property.of(database))
             .collection(Property.of("insert"))
             .document(ImmutableMap.of(
@@ -41,7 +41,7 @@ class CrudTest {
         assertThat(insertOutput.getInsertedId() != null, is(true));
 
         Update update = Update.builder()
-            .connection(MongoDbConnection.builder().uri("mongodb://root:example@localhost:27017/?authSource=admin").build())
+            .connection(MongoDbConnection.builder().uri(Property.of("mongodb://root:example@localhost:27017/?authSource=admin")).build())
             .database(Property.of(database))
             .collection(Property.of("insert"))
             .operation(Property.of(Update.Operation.REPLACE_ONE))
@@ -59,7 +59,7 @@ class CrudTest {
 
 
         update = Update.builder()
-            .connection(MongoDbConnection.builder().uri("mongodb://root:example@localhost:27017/?authSource=admin").build())
+            .connection(MongoDbConnection.builder().uri(Property.of("mongodb://root:example@localhost:27017/?authSource=admin")).build())
             .database(Property.of(database))
             .collection(Property.of("insert"))
             .document("{\"$set\": { \"tags\": [\"blue\", \"green\", \"red\"]}}")
@@ -73,7 +73,7 @@ class CrudTest {
 
         Find find = Find.builder()
             .connection(MongoDbConnection.builder()
-                .uri("mongodb://root:example@localhost:27017/?authSource=admin")
+                .uri(Property.of("mongodb://root:example@localhost:27017/?authSource=admin"))
                 .build())
             .database(Property.of(database))
             .collection(Property.of("insert"))
@@ -88,7 +88,7 @@ class CrudTest {
 
         Delete delete = Delete.builder()
             .connection(MongoDbConnection.builder()
-                .uri("mongodb://root:example@localhost:27017/?authSource=admin")
+                .uri(Property.of("mongodb://root:example@localhost:27017/?authSource=admin"))
                 .build())
             .database(Property.of(database))
             .collection(Property.of("insert"))

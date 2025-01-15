@@ -26,7 +26,7 @@ class FindTest {
 
         Find find = Find.builder()
             .connection(MongoDbConnection.builder()
-                .uri("mongodb://root:example@localhost:27017/?authSource=admin")
+                .uri(Property.of("mongodb://root:example@localhost:27017/?authSource=admin"))
                 .build())
             .database(Property.of("samples"))
             .collection(Property.of("books"))

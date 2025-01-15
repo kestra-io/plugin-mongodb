@@ -54,7 +54,7 @@ class BulkTest {
 
         Bulk put = Bulk.builder()
             .connection(MongoDbConnection.builder()
-                .uri("mongodb://root:example@localhost:27017/?authSource=admin")
+                .uri(Property.of("mongodb://root:example@localhost:27017/?authSource=admin"))
                 .build())
             .database(Property.of(database))
             .collection(Property.of("bulk"))
