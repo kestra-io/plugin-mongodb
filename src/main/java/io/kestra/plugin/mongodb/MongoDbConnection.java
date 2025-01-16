@@ -3,7 +3,7 @@ package io.kestra.plugin.mongodb;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
-import io.kestra.core.models.annotations.PluginProperty;
+import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
@@ -22,13 +22,11 @@ public class MongoDbConnection {
         description = "[URL format](https://docs.mongodb.com/manual/reference/connection-string/) " +
             "like `mongodb://mongodb0.example.com:27017`"
     )
-    @PluginProperty(dynamic = true)
     @NotNull
-    @NotEmpty
-    private String uri;
+    private Property<@NotEmpty String> uri;
 
 
     MongoClient client(RunContext runContext) throws IllegalVariableEvaluationException {
-        return MongoClients.create(runContext.render(uri));
+        return MongoClients.create(runContext.render(uri).as(String.class).orElseThrow());
     }
 }
