@@ -58,7 +58,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
                 """
         ),
         @Example(
-            full = true
+            full = true,
             title = "Find documents in MongoDB based on a filter condition",
             code = """
                 id: filter_mongodb
