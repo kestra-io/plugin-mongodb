@@ -57,6 +57,26 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
                         $oid: 60930c39a982931c20ef6cd6
                 """
         ),
+        @Example(
+            full = true
+            title = "Find documents in MongoDB based on a filter condition",
+            code = """
+                id: filter_mongodb
+                namespace: company.team
+                
+                tasks:
+                  - id: filter
+                    type: io.kestra.plugin.mongodb.Find
+                    connection:
+                      uri: mongodb://host.docker.internal:27017/
+                    database: local
+                    collection: pokemon
+                    store: true
+                    filter:
+                      base_experience:
+                        $gt: 100
+            """
+        )
     }
 )
 public class Find extends AbstractTask implements RunnableTask<Find.Output> {
