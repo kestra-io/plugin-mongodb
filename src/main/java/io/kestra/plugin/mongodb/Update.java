@@ -80,7 +80,7 @@ import jakarta.validation.constraints.NotNull;
 public class Update extends AbstractTask implements RunnableTask<Update.Output> {
     @Schema(
         title = "MongoDB document.",
-        description = "Can be a BSON string, or a map."
+        description = "Can be a BSON string or a map."
     )
     @PluginProperty(dynamic = true)
     @NotNull
@@ -88,7 +88,7 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
 
     @Schema(
         title = "MongoDB BSON filter.",
-        description = "Can be a BSON string, or a map."
+        description = "Can be a BSON string or a map."
     )
     @PluginProperty(dynamic = true)
     @NotNull
