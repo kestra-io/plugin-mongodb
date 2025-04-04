@@ -59,7 +59,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
         ),
         @Example(
             full = true,
-            title = "Find documents in MongoDB based on a filter condition",
+            title = "Find documents in MongoDB based on a filter condition using [MongoDB Query Language](https://www.mongodb.com/docs/manual/tutorial/query-documents/).",
             code = """
                 id: filter_mongodb
                 namespace: company.team
@@ -82,21 +82,21 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 public class Find extends AbstractTask implements RunnableTask<Find.Output> {
     @Schema(
         title = "MongoDB BSON filter.",
-        description = "Can be a BSON string, or a map."
+        description = "Can be a BSON string or a map."
     )
     @PluginProperty(dynamic = true)
     private Object filter;
 
     @Schema(
         title = "MongoDB BSON projection.",
-        description = "Can be a BSON string, or a map."
+        description = "Can be a BSON string or a map."
     )
     @PluginProperty(dynamic = true)
     private Object projection;
 
     @Schema(
         title = "MongoDB BSON sort.",
-        description = "Can be a BSON string, or a map."
+        description = "Can be a BSON string or a map."
     )
     @PluginProperty(dynamic = true)
     private Object sort;

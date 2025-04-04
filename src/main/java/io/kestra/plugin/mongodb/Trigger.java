@@ -26,7 +26,7 @@ import java.util.Optional;
 @Plugin(
     examples = {
         @Example(
-            title = "Wait for a MongoDB query to return results, and then iterate through rows.",
+            title = "Wait for a MongoDB query to return results, and then iterate through returned documents.",
             full = true,
             code = """
                 id: mongodb_trigger

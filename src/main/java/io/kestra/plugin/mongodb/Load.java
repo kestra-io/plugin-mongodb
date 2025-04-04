@@ -29,7 +29,7 @@ import static io.kestra.core.utils.Rethrow.throwFunction;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Bulk load documents in MongoDB using Kestra internal storage file."
+    title = "Bulk load documents into MongoDB using a Kestra internal storage file."
 )
 @Plugin(
     examples = {
