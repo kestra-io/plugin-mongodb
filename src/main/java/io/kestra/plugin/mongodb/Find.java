@@ -59,7 +59,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
         ),
         @Example(
             full = true,
-            title = "Find documents in MongoDB based on a filter condition using MongoDB Query Language.",
+            title = "Find documents in MongoDB based on a filter condition using [MongoDB Query Language](https://www.mongodb.com/docs/manual/tutorial/query-documents/).",
             code = """
                 id: filter_mongodb
                 namespace: company.team
