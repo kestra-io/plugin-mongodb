@@ -31,9 +31,9 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Execute [Bulk](https://www.mongodb.com/docs/manual/reference/method/Bulk/) requests in MongoDB such as inserts and deletes.",
+    title = "Send a bulk request to MongoDB.",
     description = """
-    Below are sample file contents that can be provided as an input to the Bulk task:
+    Execute [Bulk](https://www.mongodb.com/docs/manual/reference/method/Bulk/) requests in MongoDB such as inserts and deletes. Below are sample file contents that can be provided as an input to the Bulk task:
     ```
     { "insertOne" : {"firstName": "John", "lastName": "Doe", "city": "Paris"}}
     { "insertOne" : {"firstName": "Ravi", "lastName": "Singh", "city": "Mumbai"}}
