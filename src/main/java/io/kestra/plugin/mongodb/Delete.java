@@ -25,7 +25,7 @@ import jakarta.validation.constraints.NotNull;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Delete one or many documents from a MongoDB collection."
+    title = "Delete one or more documents from a MongoDB collection."
 )
 @Plugin(
     examples = {

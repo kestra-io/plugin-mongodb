@@ -35,7 +35,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Find documents from a MongoDB collection."
+    title = "Find documents in a MongoDB collection."
 )
 @Plugin(
     examples = {

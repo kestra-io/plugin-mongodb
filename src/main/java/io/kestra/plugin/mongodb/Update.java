@@ -26,7 +26,7 @@ import jakarta.validation.constraints.NotNull;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Update or Replace one or many documents in a MongoDB collection."
+    title = "Update or replace one or many documents in a MongoDB collection."
 )
 @Plugin(
     examples = {

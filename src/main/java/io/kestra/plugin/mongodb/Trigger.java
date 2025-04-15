@@ -21,7 +21,7 @@ import java.util.Optional;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Wait for query on a MongoDB collection."
+    title = "Trigger a flow if a periodically executed MongoDB query returns a non-empty result set."
 )
 @Plugin(
     examples = {
