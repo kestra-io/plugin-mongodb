@@ -49,18 +49,21 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
                 id: mongodb_bulk
                 namespace: company.team
                 
-                inputs:
-                  - id: myfile
-                    type: FILE
-                
                 tasks:
+                  - id: make_actions
+                    type: io.kestra.plugin.core.storage.Write
+                    content: |
+                      { "insertOne" : {"firstName": "John", "lastName": "Doe", "city": "Paris"}}
+                      { "insertOne" : {"firstName": "Ravi", "lastName": "Singh", "city": "Mumbai"}}
+                      { "deleteMany": {"filter": {"city": "Bengaluru"}}}
+                
                   - id: bulk
                     type: io.kestra.plugin.mongodb.Bulk
                     connection:
-                      uri: "mongodb://root:example@localhost:27017/?authSource=admin"
+                      uri: "mongodb://YOUR_HOST:27017"
                     database: "my_database"
                     collection: "my_collection"
-                    from: "{{ inputs.myfile }}"
+                    from: "{{ outputs.make_actions.uri }}"
                 """
         )
     }
