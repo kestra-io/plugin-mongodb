@@ -75,7 +75,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
                     filter:
                       base_experience:
                         $gt: 100
-            """
+                """
         )
     }
 )
