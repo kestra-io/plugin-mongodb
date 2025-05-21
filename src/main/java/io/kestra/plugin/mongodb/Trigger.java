@@ -35,7 +35,7 @@ import java.util.Optional;
                 tasks:
                   - id: each
                     type: io.kestra.plugin.core.flow.ForEach
-					          values: "{{ trigger.rows }}"
+				    values: "{{ trigger.rows }}"
                     tasks:
                       - id: return
                         type: io.kestra.plugin.core.debug.Return
