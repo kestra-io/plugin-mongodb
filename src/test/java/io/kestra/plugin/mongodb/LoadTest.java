@@ -49,12 +49,12 @@ class LoadTest {
 
         Load put = Load.builder()
             .connection(MongoDbConnection.builder()
-                .uri(Property.of("mongodb://root:example@localhost:27017/?authSource=admin"))
+                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
                 .build())
-            .database(Property.of(database))
-            .collection(Property.of("load"))
-            .from(Property.of(uri.toString()))
-            .chunk(Property.of(10))
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("load"))
+            .from(Property.ofValue(uri.toString()))
+            .chunk(Property.ofValue(10))
             .build();
 
         Load.Output runOutput = put.run(runContext);

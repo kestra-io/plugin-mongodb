@@ -63,7 +63,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
             code = """
                 id: filter_mongodb
                 namespace: company.team
-                
+
                 tasks:
                   - id: filter
                     type: io.kestra.plugin.mongodb.Find
@@ -116,7 +116,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         title = "Whether to store the data from the query result into an ion serialized data file."
     )
     @Builder.Default
-    private Property<Boolean> store = Property.of(false);
+    private Property<Boolean> store = Property.ofValue(false);
 
     @Override
     public Find.Output run(RunContext runContext) throws Exception {

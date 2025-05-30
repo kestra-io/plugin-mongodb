@@ -1,18 +1,24 @@
 package io.kestra.plugin.mongodb;
 
 import com.google.common.collect.ImmutableMap;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoClients;
+import com.mongodb.client.MongoCollection;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.runners.RunContextFactory;
 import io.kestra.core.junit.annotations.KestraTest;
 import jakarta.inject.Inject;
+import org.bson.Document;
+import org.bson.types.ObjectId;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
-import java.util.Map;
+import java.util.*;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.*;
 
 @KestraTest
 class FindTest {
@@ -26,10 +32,10 @@ class FindTest {
 
         Find find = Find.builder()
             .connection(MongoDbConnection.builder()
-                .uri(Property.of("mongodb://root:example@localhost:27017/?authSource=admin"))
+                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
                 .build())
-            .database(Property.of("samples"))
-            .collection(Property.of("books"))
+            .database(Property.ofValue("samples"))
+            .collection(Property.ofValue("books"))
             .filter(ImmutableMap.of(
                 "pageCount", ImmutableMap.of("$gt", 600)
             ))
@@ -52,5 +58,44 @@ class FindTest {
         assertThat(((Map<String, Object>) findOutput.getRows().get(0)).get("publishedDate"), is(Instant.parse("2000-08-01T07:00:00Z")));
 
         assertThat(((Map<String, Object>) findOutput.getRows().get(1)).get("_id"), is(315));
+    }
+
+    @Test
+    void shouldPreserveFieldOrder() throws Exception {
+        RunContext runContext = runContextFactory.of();
+
+        var insertOneOutput = InsertOne.builder()
+            .connection(MongoDbConnection.builder()
+                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
+                .build())
+            .database(Property.ofValue("samples"))
+            .collection(Property.ofValue("books"))
+            .document("{\"a\": 1, \"z\": 2, \"m\": 3}")
+            .build()
+            .run(runContext);
+
+        assertThat(insertOneOutput.getInsertedId(), is(notNullValue()));
+
+        Find find = Find.builder()
+            .connection(MongoDbConnection.builder()
+                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
+                .build())
+            .database(Property.ofValue("samples"))
+            .collection(Property.ofValue("books"))
+            .filter(Map.of(
+                "_id", Map.of("$oid", insertOneOutput.getInsertedId())
+            ))
+            .store(Property.ofValue(false))
+            .build();
+
+        Find.Output output = find.run(runContext);
+
+        System.out.println(output.getRows() + " " + output.getSize());
+        assertThat(output.getSize(), is(1L));
+
+        Map<String, Object> doc = (Map<String, Object>) output.getRows().get(0);
+        List<String> keys = new ArrayList<>(doc.keySet());
+        System.out.println(keys);
+        assertThat(keys, contains("_id", "a", "z", "m"));
     }
 }
