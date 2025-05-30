@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.AbstractMap;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -64,7 +65,7 @@ public abstract class MongoDbService {
                         map(e.getValue())
                     ))
                     // https://bugs.openjdk.java.net/browse/JDK-8148463
-                    .collect(HashMap::new, (m, v) -> m.put(v.getKey(), v.getValue()), HashMap::putAll);
+                    .collect(LinkedHashMap::new, (m, v) -> m.put(v.getKey(), v.getValue()), LinkedHashMap::putAll);
             case ARRAY:
                 return doc.asArray()
                     .stream()
