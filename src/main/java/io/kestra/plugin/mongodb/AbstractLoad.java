@@ -43,7 +43,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
         title = "Chunk size for every bulk request."
     )
     @Builder.Default
-    private Property<Integer> chunk = Property.of(1000);
+    private Property<Integer> chunk = Property.ofValue(1000);
 
     abstract protected Flux<WriteModel<Bson>> source(RunContext runContext, BufferedReader inputStream) throws Exception;
 

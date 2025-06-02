@@ -84,7 +84,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     private Property<Integer> skip;
 
     @Builder.Default
-    private Property<Boolean> store = Property.of(false);
+    private Property<Boolean> store = Property.ofValue(false);
 
     @Override
     public Optional<Execution> evaluate(ConditionContext conditionContext, TriggerContext context) throws Exception {

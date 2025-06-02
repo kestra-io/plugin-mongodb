@@ -65,7 +65,7 @@ public class Load extends AbstractLoad {
         title = "Whether to remove idKey from the final document."
     )
     @Builder.Default
-    private Property<Boolean> removeIdKey = Property.of(true);
+    private Property<Boolean> removeIdKey = Property.ofValue(true);
 
     @SuppressWarnings("unchecked")
     @Override

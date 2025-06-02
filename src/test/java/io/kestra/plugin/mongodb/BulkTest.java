@@ -55,12 +55,12 @@ class BulkTest {
 
         Bulk put = Bulk.builder()
             .connection(MongoDbConnection.builder()
-                .uri(Property.of("mongodb://root:example@localhost:27017/?authSource=admin"))
+                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
                 .build())
-            .database(Property.of(database))
-            .collection(Property.of("bulk"))
-            .from(Property.of(uri.toString()))
-            .chunk(Property.of(10))
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("bulk"))
+            .from(Property.ofValue(uri.toString()))
+            .chunk(Property.ofValue(10))
             .build();
 
         Bulk.Output runOutput = put.run(runContext);
