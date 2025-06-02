@@ -26,10 +26,10 @@ class FindTest {
 
         Find find = Find.builder()
             .connection(MongoDbConnection.builder()
-                .uri(Property.of("mongodb://root:example@localhost:27017/?authSource=admin"))
+                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
                 .build())
-            .database(Property.of("samples"))
-            .collection(Property.of("books"))
+            .database(Property.ofValue("samples"))
+            .collection(Property.ofValue("books"))
             .filter(ImmutableMap.of(
                 "pageCount", ImmutableMap.of("$gt", 600)
             ))

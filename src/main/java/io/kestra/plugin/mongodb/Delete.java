@@ -63,7 +63,7 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
     )
     @Builder.Default
     @NotNull
-    private Property<Operation> operation = Property.of(Operation.DELETE_ONE);
+    private Property<Operation> operation = Property.ofValue(Operation.DELETE_ONE);
 
     @Override
     public Delete.Output run(RunContext runContext) throws Exception {

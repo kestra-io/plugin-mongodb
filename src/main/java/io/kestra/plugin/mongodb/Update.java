@@ -98,7 +98,7 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
         title = "Operation to use."
     )
     @Builder.Default
-    private Property<Operation> operation = Property.of(Operation.UPDATE_ONE);
+    private Property<Operation> operation = Property.ofValue(Operation.UPDATE_ONE);
 
     @Override
     public Update.Output run(RunContext runContext) throws Exception {

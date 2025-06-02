@@ -28,9 +28,9 @@ class CrudTest {
         String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
 
         InsertOne insert = InsertOne.builder()
-            .connection(MongoDbConnection.builder().uri(Property.of("mongodb://root:example@localhost:27017/?authSource=admin")).build())
-            .database(Property.of(database))
-            .collection(Property.of("insert"))
+            .connection(MongoDbConnection.builder().uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin")).build())
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("insert"))
             .document(ImmutableMap.of(
                 "name", "{{ variable }}",
                 "tags", List.of("blue", "green", "red")
@@ -41,10 +41,10 @@ class CrudTest {
         assertThat(insertOutput.getInsertedId() != null, is(true));
 
         Update update = Update.builder()
-            .connection(MongoDbConnection.builder().uri(Property.of("mongodb://root:example@localhost:27017/?authSource=admin")).build())
-            .database(Property.of(database))
-            .collection(Property.of("insert"))
-            .operation(Property.of(Update.Operation.REPLACE_ONE))
+            .connection(MongoDbConnection.builder().uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin")).build())
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("insert"))
+            .operation(Property.ofValue(Update.Operation.REPLACE_ONE))
             .document(ImmutableMap.of(
                 "name", "{{ variable }}",
                 "tags", List.of("green", "red")
@@ -59,9 +59,9 @@ class CrudTest {
 
 
         update = Update.builder()
-            .connection(MongoDbConnection.builder().uri(Property.of("mongodb://root:example@localhost:27017/?authSource=admin")).build())
-            .database(Property.of(database))
-            .collection(Property.of("insert"))
+            .connection(MongoDbConnection.builder().uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin")).build())
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("insert"))
             .document("{\"$set\": { \"tags\": [\"blue\", \"green\", \"red\"]}}")
             .filter(ImmutableMap.of(
                 "_id", ImmutableMap.of("$oid", insertOutput.getInsertedId())
@@ -73,10 +73,10 @@ class CrudTest {
 
         Find find = Find.builder()
             .connection(MongoDbConnection.builder()
-                .uri(Property.of("mongodb://root:example@localhost:27017/?authSource=admin"))
+                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
                 .build())
-            .database(Property.of(database))
-            .collection(Property.of("insert"))
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("insert"))
             .filter(ImmutableMap.of(
                 "_id", ImmutableMap.of("$oid", insertOutput.getInsertedId())
             ))
@@ -88,10 +88,10 @@ class CrudTest {
 
         Delete delete = Delete.builder()
             .connection(MongoDbConnection.builder()
-                .uri(Property.of("mongodb://root:example@localhost:27017/?authSource=admin"))
+                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
                 .build())
-            .database(Property.of(database))
-            .collection(Property.of("insert"))
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("insert"))
             .filter(ImmutableMap.of(
                 "_id", ImmutableMap.of("$oid", insertOutput.getInsertedId())
             ))
