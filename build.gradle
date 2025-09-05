@@ -88,6 +88,8 @@ dependencies {
     testImplementation group: "io.kestra", name: "tests", version: kestraVersion
     testImplementation group: "io.kestra", name: "runner-memory", version: kestraVersion
     testImplementation group: "io.kestra", name: "storage-local", version: kestraVersion
+    testImplementation group: "io.kestra", name: "scheduler"
+    testImplementation group: "io.kestra", name: "worker"
 
     // test
     testImplementation "org.junit.jupiter:junit-jupiter-engine"
