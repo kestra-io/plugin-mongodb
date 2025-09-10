@@ -5,7 +5,6 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Plugin;
-import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.RunnableTask;
@@ -20,10 +19,12 @@ import org.bson.conversions.Bson;
 import org.slf4j.Logger;
 import reactor.core.publisher.Flux;
 
+import jakarta.validation.constraints.NotNull;
 import java.io.*;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static io.kestra.core.utils.Rethrow.throwConsumer;
@@ -109,8 +110,9 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
         title = "MongoDB aggregation pipeline.",
         description = "List of pipeline stages as a BSON array or list of maps."
     )
-    @PluginProperty(dynamic = true)
-    private List<Object> pipeline;
+
+    @NotNull
+    Property<List<Map<String, Object>>> pipeline;
 
     @Schema(
         title = "Whether to allow disk usage for stages.",
@@ -124,7 +126,7 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
         description = "Sets the maximum execution time on the server for this operation."
     )
     @Builder.Default
-    private Property<Integer> maxTimeMs = Property.ofValue(0);
+    private Property<Integer> maxTimeMs = Property.ofValue(60000);
 
     @Schema(
         title = "Batch size for cursor.",
@@ -148,7 +150,8 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
 
             List<Bson> pipelineStages = new ArrayList<>();
             if (this.pipeline != null) {
-                for (Object stage : this.pipeline) {
+                List<Map<String, Object>> renderedPipeline = runContext.render(this.pipeline).asList(Map.class);
+                for (Map<String, Object> stage : renderedPipeline) {
                     BsonDocument bsonStage = MongoDbService.toDocument(runContext, stage);
                     pipelineStages.add(bsonStage);
                     logger.debug("Pipeline stage: {}", bsonStage);
@@ -181,7 +184,7 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
                     .uri(store.getLeft())
                     .size(store.getRight());
             } else {
-                Pair<ArrayList<Object>, Long> fetch = this.fetch(aggregate);
+                Pair<List<Object>, Long> fetch = this.fetch(aggregate);
 
                 builder
                     .rows(fetch.getLeft())
@@ -215,8 +218,8 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
         }
     }
 
-    private Pair<ArrayList<Object>, Long> fetch(AggregateIterable<BsonDocument> documents) {
-        ArrayList<Object> result = new ArrayList<>();
+    private Pair<List<Object>, Long> fetch(AggregateIterable<BsonDocument> documents) {
+        List<Object> result = new ArrayList<>();
         AtomicLong count = new AtomicLong();
 
         documents

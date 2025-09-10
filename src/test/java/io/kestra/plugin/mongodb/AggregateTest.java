@@ -1,6 +1,10 @@
 package io.kestra.plugin.mongodb;
 
 import com.google.common.collect.ImmutableMap;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoClients;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.runners.RunContextFactory;
@@ -9,7 +13,15 @@ import io.kestra.core.serializers.JacksonMapper;
 import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.utils.IdUtils;
 import jakarta.inject.Inject;
+import org.bson.Document;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.testcontainers.containers.MongoDBContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -19,77 +31,148 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
 @KestraTest
+@Testcontainers
 class AggregateTest {
     @Inject
     private RunContextFactory runContextFactory;
 
-    @SuppressWarnings("unchecked")
-    @Test
-    void run() throws Exception {
-        RunContext runContext = runContextFactory.of(ImmutableMap.of());
+    @Container
+    static MongoDBContainer mongoDBContainer = new MongoDBContainer(DockerImageName.parse("mongo:7.0"))
+            .withExposedPorts(27017);
 
-        Aggregate aggregate = Aggregate.builder()
-            .connection(MongoDbConnection.builder()
-                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
-                .build())
-            .database(Property.ofValue("samples"))
-            .collection(Property.ofValue("books"))
-            .pipeline(Arrays.asList(
-                ImmutableMap.of("$match", ImmutableMap.of(
-                    "pageCount", ImmutableMap.of("$gt", 500)
-                )),
-                ImmutableMap.of("$group", ImmutableMap.of(
-                    "_id", "$status",
-                    "totalBooks", ImmutableMap.of("$sum", 1),
-                    "avgPageCount", ImmutableMap.of("$avg", "$pageCount"),
-                    "maxPageCount", ImmutableMap.of("$max", "$pageCount")
-                )),
-                ImmutableMap.of("$sort", ImmutableMap.of("totalBooks", -1))
-            ))
-            .build();
+    private static String connectionUri;
+    private static final String DATABASE_NAME = "test_db";
+    private static final String COLLECTION_NAME = "test_collection";
 
-        Aggregate.Output output = aggregate.run(runContext);
-
-        assertThat(output.getSize(), is(1L));
-        assertThat(output.getRows(), hasSize(1));
+    @BeforeAll
+    static void setupContainer() {
+        mongoDBContainer.start();
+        connectionUri = mongoDBContainer.getConnectionString();
         
-        Map<String, Object> result = (Map<String, Object>) output.getRows().get(0);
-        assertThat(result.get("_id"), is("PUBLISH"));
-        assertThat(result.get("totalBooks"), is(59));
-        assertThat(((Number) result.get("avgPageCount")).intValue(), is(646));
-        assertThat(result.get("maxPageCount"), is(1101));
+        // Insert test data
+        try (MongoClient client = MongoClients.create(connectionUri)) {
+            MongoDatabase database = client.getDatabase(DATABASE_NAME);
+            MongoCollection<Document> collection = database.getCollection(COLLECTION_NAME);
+            
+            // Clear any existing data
+            collection.drop();
+            
+            // Insert sample documents for testing
+            List<Document> documents = Arrays.asList(
+                new Document("_id", 1)
+                    .append("title", "Book One")
+                    .append("author", "Author A")
+                    .append("category", "Fiction")
+                    .append("price", 25.99)
+                    .append("quantity", 100)
+                    .append("status", "available"),
+                new Document("_id", 2)
+                    .append("title", "Book Two")
+                    .append("author", "Author B")
+                    .append("category", "Fiction")
+                    .append("price", 30.50)
+                    .append("quantity", 50)
+                    .append("status", "available"),
+                new Document("_id", 3)
+                    .append("title", "Book Three")
+                    .append("author", "Author A")
+                    .append("category", "Science")
+                    .append("price", 45.00)
+                    .append("quantity", 0)
+                    .append("status", "out_of_stock"),
+                new Document("_id", 4)
+                    .append("title", "Book Four")
+                    .append("author", "Author C")
+                    .append("category", "Science")
+                    .append("price", 35.99)
+                    .append("quantity", 75)
+                    .append("status", "available"),
+                new Document("_id", 5)
+                    .append("title", "Book Five")
+                    .append("author", "Author B")
+                    .append("category", "History")
+                    .append("price", 28.00)
+                    .append("quantity", 30)
+                    .append("status", "available")
+            );
+            
+            collection.insertMany(documents);
+        }
+    }
+
+    @AfterAll
+    static void teardownContainer() {
+        if (mongoDBContainer != null && mongoDBContainer.isRunning()) {
+            mongoDBContainer.stop();
+        }
     }
 
     @SuppressWarnings("unchecked")
     @Test
-    void testGroupByCategories() throws Exception {
+    void testSimpleAggregation() throws Exception {
         RunContext runContext = runContextFactory.of(ImmutableMap.of());
 
         Aggregate aggregate = Aggregate.builder()
             .connection(MongoDbConnection.builder()
-                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
+                .uri(Property.ofValue(connectionUri))
                 .build())
-            .database(Property.ofValue("samples"))
-            .collection(Property.ofValue("books"))
-            .pipeline(Arrays.asList(
-                ImmutableMap.of("$unwind", "$categories"),
-                ImmutableMap.of("$group", ImmutableMap.of(
-                    "_id", "$categories",
-                    "count", ImmutableMap.of("$sum", 1)
+            .database(Property.ofValue(DATABASE_NAME))
+            .collection(Property.ofValue(COLLECTION_NAME))
+            .pipeline(Property.ofValue(Arrays.asList(
+                ImmutableMap.of("$match", ImmutableMap.of(
+                    "status", "available"
                 )),
-                ImmutableMap.of("$sort", ImmutableMap.of("count", -1)),
-                ImmutableMap.of("$limit", 5)
-            ))
+                ImmutableMap.of("$group", ImmutableMap.of(
+                    "_id", "$category",
+                    "totalBooks", ImmutableMap.of("$sum", 1),
+                    "avgPrice", ImmutableMap.of("$avg", "$price"),
+                    "totalQuantity", ImmutableMap.of("$sum", "$quantity")
+                )),
+                ImmutableMap.of("$sort", ImmutableMap.of("totalBooks", -1))
+            )))
             .build();
 
         Aggregate.Output output = aggregate.run(runContext);
 
-        assertThat(output.getSize(), is(5L));
-        assertThat(output.getRows(), hasSize(5));
+        assertThat(output.getSize(), is(3L));
+        assertThat(output.getRows(), hasSize(3));
         
-        Map<String, Object> topCategory = (Map<String, Object>) output.getRows().get(0);
-        assertThat(topCategory.get("_id"), is("Java"));
-        assertThat(topCategory.get("count"), is(95));
+        Map<String, Object> result = (Map<String, Object>) output.getRows().get(0);
+        assertThat(result.get("_id"), is("Fiction"));
+        assertThat(result.get("totalBooks"), is(2));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void testGroupByAuthor() throws Exception {
+        RunContext runContext = runContextFactory.of(ImmutableMap.of());
+
+        Aggregate aggregate = Aggregate.builder()
+            .connection(MongoDbConnection.builder()
+                .uri(Property.ofValue(connectionUri))
+                .build())
+            .database(Property.ofValue(DATABASE_NAME))
+            .collection(Property.ofValue(COLLECTION_NAME))
+            .pipeline(Property.ofValue(Arrays.asList(
+                ImmutableMap.of("$group", ImmutableMap.of(
+                    "_id", "$author",
+                    "bookCount", ImmutableMap.of("$sum", 1),
+                    "titles", ImmutableMap.of("$push", "$title")
+                )),
+                ImmutableMap.of("$sort", ImmutableMap.of("bookCount", -1))
+            )))
+            .build();
+
+        Aggregate.Output output = aggregate.run(runContext);
+
+        assertThat(output.getSize(), is(3L));
+        assertThat(output.getRows(), hasSize(3));
+        
+        // Author A and Author B both have 2 books
+        Map<String, Object> topAuthor = (Map<String, Object>) output.getRows().get(0);
+        assertThat(topAuthor.get("bookCount"), is(2));
+        assertThat(topAuthor.get("titles"), instanceOf(List.class));
+        assertThat(((List<?>) topAuthor.get("titles")).size(), is(2));
     }
 
     @SuppressWarnings("unchecked")
@@ -99,26 +182,18 @@ class AggregateTest {
 
         Aggregate aggregate = Aggregate.builder()
             .connection(MongoDbConnection.builder()
-                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
+                .uri(Property.ofValue(connectionUri))
                 .build())
-            .database(Property.ofValue("samples"))
-            .collection(Property.ofValue("books"))
-            .pipeline(Arrays.asList(
-                ImmutableMap.of("$match", ImmutableMap.of(
-                    "_id", ImmutableMap.of("$lte", 5)
-                )),
+            .database(Property.ofValue(DATABASE_NAME))
+            .collection(Property.ofValue(COLLECTION_NAME))
+            .pipeline(Property.ofValue(Arrays.asList(
                 ImmutableMap.of("$project", ImmutableMap.of(
                     "title", 1,
-                    "pageCount", 1,
-                    "year", ImmutableMap.of("$year", "$publishedDate"),
-                    "month", ImmutableMap.of("$month", "$publishedDate"),
-                    "hasLongDescription", ImmutableMap.of("$gt", Arrays.asList(
-                        ImmutableMap.of("$strLenCP", ImmutableMap.of("$ifNull", Arrays.asList("$longDescription", ""))),
-                        500
-                    ))
+                    "discountedPrice", ImmutableMap.of("$multiply", Arrays.asList("$price", 0.9)),
+                    "inStock", ImmutableMap.of("$gt", Arrays.asList("$quantity", 0))
                 )),
                 ImmutableMap.of("$sort", ImmutableMap.of("_id", 1))
-            ))
+            )))
             .build();
 
         Aggregate.Output output = aggregate.run(runContext);
@@ -126,14 +201,12 @@ class AggregateTest {
         assertThat(output.getSize(), is(5L));
         assertThat(output.getRows(), hasSize(5));
         
-        // Check first book
         Map<String, Object> firstBook = (Map<String, Object>) output.getRows().get(0);
         assertThat(firstBook.get("_id"), is(1));
-        assertThat(firstBook.get("title"), is("Unlocking Android"));
-        assertThat(firstBook.get("pageCount"), is(416));
-        assertThat(firstBook.get("year"), is(2009));
-        assertThat(firstBook.get("month"), is(4));
-        assertThat(firstBook.get("hasLongDescription"), is(true));
+        assertThat(firstBook.get("title"), is("Book One"));
+        assertThat(firstBook.get("inStock"), is(true));
+        assertThat(((Number) firstBook.get("discountedPrice")).doubleValue(), 
+                   closeTo(23.391, 0.001));
     }
 
     @SuppressWarnings("unchecked")
@@ -143,23 +216,17 @@ class AggregateTest {
 
         Aggregate aggregate = Aggregate.builder()
             .connection(MongoDbConnection.builder()
-                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
+                .uri(Property.ofValue(connectionUri))
                 .build())
-            .database(Property.ofValue("samples"))
-            .collection(Property.ofValue("books"))
-            .pipeline(Arrays.asList(
+            .database(Property.ofValue(DATABASE_NAME))
+            .collection(Property.ofValue(COLLECTION_NAME))
+            .pipeline(Property.ofValue(Arrays.asList(
                 ImmutableMap.of("$group", ImmutableMap.of(
-                    "_id", ImmutableMap.of(
-                        "status", "$status",
-                        "hasPages", ImmutableMap.of("$cond", Arrays.asList(
-                            ImmutableMap.of("$gt", Arrays.asList("$pageCount", 0)),
-                            "YES",
-                            "NO"
-                        ))
-                    ),
-                    "count", ImmutableMap.of("$sum", 1)
+                    "_id", "$status",
+                    "count", ImmutableMap.of("$sum", 1),
+                    "avgPrice", ImmutableMap.of("$avg", "$price")
                 ))
-            ))
+            )))
             .store(Property.ofValue(true))
             .build();
 
@@ -167,7 +234,7 @@ class AggregateTest {
 
         assertThat(output.getUri(), is(notNullValue()));
         assertThat(output.getRows(), is(nullValue()));
-        assertThat(output.getSize(), greaterThan(0L));
+        assertThat(output.getSize(), is(2L));
 
         // Verify stored file content
         try (var inputStream = runContext.storage().getFile(output.getUri());
@@ -177,7 +244,7 @@ class AggregateTest {
             while ((line = reader.readLine()) != null) {
                 storedRows.add(JacksonMapper.ofIon().readValue(line, Object.class));
             }
-            assertThat(storedRows.size(), is(output.getSize().intValue()));
+            assertThat(storedRows.size(), is(2));
         }
     }
 
@@ -188,26 +255,28 @@ class AggregateTest {
 
         Aggregate aggregate = Aggregate.builder()
             .connection(MongoDbConnection.builder()
-                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
+                .uri(Property.ofValue(connectionUri))
                 .build())
-            .database(Property.ofValue("samples"))
-            .collection(Property.ofValue("books"))
-            .pipeline(Arrays.asList(
+            .database(Property.ofValue(DATABASE_NAME))
+            .collection(Property.ofValue(COLLECTION_NAME))
+            .pipeline(Property.ofValue(Arrays.asList(
                 ImmutableMap.of("$match", ImmutableMap.of(
-                    "authors", ImmutableMap.of("$exists", true, "$ne", Arrays.asList())
+                    "quantity", ImmutableMap.of("$gt", 0)
                 )),
-                ImmutableMap.of("$unwind", "$authors"),
+                ImmutableMap.of("$addFields", ImmutableMap.of(
+                    "totalValue", ImmutableMap.of("$multiply", Arrays.asList("$price", "$quantity"))
+                )),
                 ImmutableMap.of("$group", ImmutableMap.of(
-                    "_id", "$authors",
-                    "bookCount", ImmutableMap.of("$sum", 1),
-                    "avgPageCount", ImmutableMap.of("$avg", "$pageCount"),
-                    "titles", ImmutableMap.of("$push", "$title")
+                    "_id", "$category",
+                    "totalInventoryValue", ImmutableMap.of("$sum", "$totalValue"),
+                    "avgPrice", ImmutableMap.of("$avg", "$price"),
+                    "products", ImmutableMap.of("$push", ImmutableMap.of(
+                        "title", "$title",
+                        "value", "$totalValue"
+                    ))
                 )),
-                ImmutableMap.of("$match", ImmutableMap.of(
-                    "bookCount", ImmutableMap.of("$gte", 3)
-                )),
-                ImmutableMap.of("$sort", ImmutableMap.of("bookCount", -1))
-            ))
+                ImmutableMap.of("$sort", ImmutableMap.of("totalInventoryValue", -1))
+            )))
             .allowDiskUse(Property.ofValue(true))
             .build();
 
@@ -216,37 +285,10 @@ class AggregateTest {
         assertThat(output.getRows(), is(notNullValue()));
         assertThat(output.getSize(), greaterThan(0L));
 
-        // Check that we have authors with multiple books
-        Map<String, Object> topAuthor = (Map<String, Object>) output.getRows().get(0);
-        assertThat(topAuthor.get("bookCount"), is(notNullValue()));
-        assertThat(((Number) topAuthor.get("bookCount")).intValue(), greaterThanOrEqualTo(3));
-        assertThat(topAuthor.get("titles"), instanceOf(List.class));
-    }
-
-    @SuppressWarnings("unchecked")
-    @Test
-    void testStringPipeline() throws Exception {
-        RunContext runContext = runContextFactory.of(ImmutableMap.of());
-
-        Aggregate aggregate = Aggregate.builder()
-            .connection(MongoDbConnection.builder()
-                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
-                .build())
-            .database(Property.ofValue("samples"))
-            .collection(Property.ofValue("books"))
-            .pipeline(Arrays.asList(
-                "{\"$match\": {\"status\": \"PUBLISH\"}}",
-                "{\"$count\": \"totalPublished\"}"
-            ))
-            .build();
-
-        Aggregate.Output output = aggregate.run(runContext);
-
-        assertThat(output.getSize(), is(1L));
-        assertThat(output.getRows(), hasSize(1));
-        
-        Map<String, Object> result = (Map<String, Object>) output.getRows().get(0);
-        assertThat(result.get("totalPublished"), is(431));
+        Map<String, Object> topCategory = (Map<String, Object>) output.getRows().get(0);
+        assertThat(topCategory.get("_id"), is(notNullValue()));
+        assertThat(topCategory.get("totalInventoryValue"), is(notNullValue()));
+        assertThat(topCategory.get("products"), instanceOf(List.class));
     }
 
     @SuppressWarnings("unchecked")
@@ -256,72 +298,94 @@ class AggregateTest {
 
         Aggregate aggregate = Aggregate.builder()
             .connection(MongoDbConnection.builder()
-                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
+                .uri(Property.ofValue(connectionUri))
                 .build())
-            .database(Property.ofValue("samples"))
-            .collection(Property.ofValue("books"))
-            .pipeline(new ArrayList<>())
+            .database(Property.ofValue(DATABASE_NAME))
+            .collection(Property.ofValue(COLLECTION_NAME))
+            .pipeline(Property.ofValue(new ArrayList<>()))
             .build();
 
         Aggregate.Output output = aggregate.run(runContext);
 
         // Empty pipeline returns all documents
-        assertThat(output.getSize(), is(431L));
-        assertThat(output.getRows(), hasSize(431));
+        assertThat(output.getSize(), is(5L));
+        assertThat(output.getRows(), hasSize(5));
     }
 
     @SuppressWarnings("unchecked")
     @Test
-    void testWithTemporaryCollection() throws Exception {
+    void testWithLookup() throws Exception {
         RunContext runContext = runContextFactory.of(ImmutableMap.of());
-        String tempCollection = "temp_" + IdUtils.create().toLowerCase(Locale.ROOT);
-
-        // First insert some test data
-        InsertOne insert = InsertOne.builder()
-            .connection(MongoDbConnection.builder()
-                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
-                .build())
-            .database(Property.ofValue("samples"))
-            .collection(Property.ofValue(tempCollection))
-            .document(ImmutableMap.of(
-                "type", "test",
-                "value", 100
-            ))
-            .build();
         
-        insert.run(runContext);
+        // Create a second collection for lookup
+        String ordersCollection = "orders";
+        try (MongoClient client = MongoClients.create(connectionUri)) {
+            MongoDatabase database = client.getDatabase(DATABASE_NAME);
+            MongoCollection<Document> orders = database.getCollection(ordersCollection);
+            
+            orders.drop();
+            orders.insertMany(Arrays.asList(
+                new Document("orderId", 1).append("bookId", 1).append("quantity", 2),
+                new Document("orderId", 2).append("bookId", 1).append("quantity", 1),
+                new Document("orderId", 3).append("bookId", 2).append("quantity", 3),
+                new Document("orderId", 4).append("bookId", 3).append("quantity", 1)
+            ));
+        }
 
-        // Now aggregate on the temporary collection
         Aggregate aggregate = Aggregate.builder()
             .connection(MongoDbConnection.builder()
-                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
+                .uri(Property.ofValue(connectionUri))
                 .build())
-            .database(Property.ofValue("samples"))
-            .collection(Property.ofValue(tempCollection))
-            .pipeline(Arrays.asList(
-                ImmutableMap.of("$match", ImmutableMap.of("type", "test"))
-            ))
+            .database(Property.ofValue(DATABASE_NAME))
+            .collection(Property.ofValue(COLLECTION_NAME))
+            .pipeline(Property.ofValue(Arrays.asList(
+                ImmutableMap.of("$lookup", ImmutableMap.of(
+                    "from", ordersCollection,
+                    "localField", "_id",
+                    "foreignField", "bookId",
+                    "as", "orders"
+                )),
+                ImmutableMap.of("$project", ImmutableMap.of(
+                    "title", 1,
+                    "orderCount", ImmutableMap.of("$size", "$orders")
+                )),
+                ImmutableMap.of("$match", ImmutableMap.of(
+                    "orderCount", ImmutableMap.of("$gt", 0)
+                )),
+                ImmutableMap.of("$sort", ImmutableMap.of("orderCount", -1))
+            )))
             .build();
 
         Aggregate.Output output = aggregate.run(runContext);
 
-        assertThat(output.getSize(), is(1L));
-        assertThat(output.getRows(), hasSize(1));
+        assertThat(output.getSize(), is(3L));
         
-        Map<String, Object> result = (Map<String, Object>) output.getRows().get(0);
-        assertThat(result.get("type"), is("test"));
-        assertThat(result.get("value"), is(100));
+        Map<String, Object> mostOrdered = (Map<String, Object>) output.getRows().get(0);
+        assertThat(mostOrdered.get("title"), is("Book One"));
+        assertThat(mostOrdered.get("orderCount"), is(2));
+    }
 
-        // Clean up
-        Delete delete = Delete.builder()
+    @SuppressWarnings("unchecked")
+    @Test
+    void testWithMaxTimeMs() throws Exception {
+        RunContext runContext = runContextFactory.of(ImmutableMap.of());
+
+        Aggregate aggregate = Aggregate.builder()
             .connection(MongoDbConnection.builder()
-                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
+                .uri(Property.ofValue(connectionUri))
                 .build())
-            .database(Property.ofValue("samples"))
-            .collection(Property.ofValue(tempCollection))
-            .filter(ImmutableMap.of())
+            .database(Property.ofValue(DATABASE_NAME))
+            .collection(Property.ofValue(COLLECTION_NAME))
+            .pipeline(Property.ofValue(Arrays.asList(
+                ImmutableMap.of("$match", ImmutableMap.of("status", "available"))
+            )))
+            .maxTimeMs(Property.ofValue(5000)) // 5 seconds timeout
+            .batchSize(Property.ofValue(2))
             .build();
-        
-        delete.run(runContext);
+
+        Aggregate.Output output = aggregate.run(runContext);
+
+        assertThat(output.getSize(), is(4L));
+        assertThat(output.getRows(), hasSize(4));
     }
 }
