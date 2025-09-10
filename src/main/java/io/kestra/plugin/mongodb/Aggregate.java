@@ -110,7 +110,6 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
         title = "MongoDB aggregation pipeline.",
         description = "List of pipeline stages as a BSON array or list of maps."
     )
-
     @NotNull
     Property<List<Map<String, Object>>> pipeline;
 

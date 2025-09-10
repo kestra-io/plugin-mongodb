@@ -5,7 +5,7 @@ plugins {
     id "idea"
     id 'jacoco'
     id "com.adarshr.test-logger" version "4.0.0"
-    id "com.github.johnrengelman.shadow" version "8.1.1"
+    id "com.gradleup.shadow" version "9.1.0"
     id 'signing'
     id "com.github.ben-manes.versions" version "0.52.0"
     id 'net.researchgate.release' version '3.1.0'
@@ -36,7 +36,6 @@ dependencies {
     // Platform
     annotationProcessor enforcedPlatform("io.kestra:platform:$kestraVersion")
     implementation enforcedPlatform("io.kestra:platform:$kestraVersion")
-    api enforcedPlatform("io.kestra:platform:$kestraVersion")
 
     // Lombok
     annotationProcessor "org.projectlombok:lombok"
@@ -49,7 +48,7 @@ dependencies {
     annotationProcessor group: "io.kestra", name: "processor", version: kestraVersion
     compileOnly group: "io.kestra", name: "core", version: kestraVersion
 
-    api 'org.mongodb:mongodb-driver-sync:5.5.0'
+    api 'org.mongodb:mongodb-driver-sync:5.5.1'
 }
 
 
@@ -89,6 +88,8 @@ dependencies {
     testImplementation group: "io.kestra", name: "tests", version: kestraVersion
     testImplementation group: "io.kestra", name: "runner-memory", version: kestraVersion
     testImplementation group: "io.kestra", name: "storage-local", version: kestraVersion
+    testImplementation group: "io.kestra", name: "scheduler"
+    testImplementation group: "io.kestra", name: "worker"
 
     // test
     testImplementation "org.junit.jupiter:junit-jupiter-engine"
