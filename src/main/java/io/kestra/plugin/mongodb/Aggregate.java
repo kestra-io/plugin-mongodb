@@ -6,9 +6,11 @@ import com.mongodb.client.MongoCollection;
 import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.executions.metrics.Counter;
+import io.kestra.core.models.executions.statistics.DailyExecutionStatistics.Duration;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.RunnableTask;
 import io.kestra.core.runners.RunContext;
+import io.kestra.core.models.tasks.common.FetchType;
 import io.kestra.core.serializers.FileSerde;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
@@ -118,14 +120,14 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
         description = "Enables writing to temporary files when a pipeline stage exceeds the 100 megabyte limit."
     )
     @Builder.Default
-    private Property<Boolean> allowDiskUse = Property.ofValue(false);
+    private Property<Boolean> allowDiskUse = Property.ofValue(true);
 
     @Schema(
         title = "Maximum execution time in milliseconds.",
         description = "Sets the maximum execution time on the server for this operation."
     )
     @Builder.Default
-    private Property<Integer> maxTimeMs = Property.ofValue(60000);
+    private Property<Integer> maxTimeMs = Property.ofValue(Duration.ofSeconds(60).toMillis());
 
     @Schema(
         title = "Batch size for cursor.",
@@ -138,7 +140,7 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
         title = "Whether to store the data from the aggregation result into an ion serialized data file."
     )
     @Builder.Default
-    private Property<Boolean> store = Property.ofValue(false);
+    private Property<FetchType> store = Property.ofValue(FetchType.FETCH);
 
     @Override
     public Aggregate.Output run(RunContext runContext) throws Exception {
@@ -159,12 +161,12 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
 
             AggregateIterable<BsonDocument> aggregate = collection.aggregate(pipelineStages);
 
-            Boolean allowDisk = runContext.render(this.allowDiskUse).as(Boolean.class).orElse(false);
+            Boolean allowDisk = runContext.render(this.allowDiskUse).as(Boolean.class).orElse(true);
             if (allowDisk) {
                 aggregate.allowDiskUse(true);
             }
 
-            Integer maxTime = runContext.render(this.maxTimeMs).as(Integer.class).orElse(0);
+            Integer maxTime = runContext.render(this.maxTimeMs).as(Integer.class).orElse(60000);
             if (maxTime > 0) {
                 aggregate.maxTime(maxTime, java.util.concurrent.TimeUnit.MILLISECONDS);
             }
