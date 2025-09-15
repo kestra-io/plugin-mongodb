@@ -6,7 +6,7 @@ tasks:
   - id: sales_by_category
     type: io.kestra.plugin.mongodb.Aggregate
     connection:
-      uri: "mongodb://root:example@localhost:27017/?authSource=admin"
+      uri: "mongodb://localhost:27017"
     database: "sales_db"
     collection: "transactions"
     pipeline:
@@ -28,7 +28,7 @@ tasks:
   - id: user_analytics
     type: io.kestra.plugin.mongodb.Aggregate
     connection:
-      uri: "mongodb://root:example@localhost:27017/?authSource=admin"
+      uri: "mongodb://localhost:27017"
     database: "analytics_db"
     collection: "users"
     pipeline:
@@ -90,13 +90,13 @@ tasks:
   - id: monthly_revenue_report
     type: io.kestra.plugin.mongodb.Aggregate
     connection:
-      uri: "mongodb://root:example@localhost:27017/?authSource=admin"
+      uri: "mongodb://localhost:27017"
     database: "reporting_db"
     collection: "sales"
     pipeline:
       - $match:
           createdAt:
-            $gte: "{{ trigger.date | dateAdd(-6, 'MONTHS') }}"
+            $gte: "2024-01-01T00:00:00Z"
       - $group:
           _id:
             year:

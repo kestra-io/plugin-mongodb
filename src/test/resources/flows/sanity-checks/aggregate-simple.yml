@@ -1,4 +1,4 @@
-id: mongodb_aggregate_simple_test
+id: mongodb_aggregate_simple
 namespace: io.kestra.tests
 
 tasks:

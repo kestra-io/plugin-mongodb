@@ -7,105 +7,24 @@ import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
-import io.kestra.core.runners.RunContextFactory;
-import io.kestra.core.serializers.FileSerde;
 import io.kestra.core.serializers.JacksonMapper;
 import io.kestra.core.junit.annotations.KestraTest;
-import io.kestra.core.utils.IdUtils;
-import jakarta.inject.Inject;
 import org.bson.Document;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.containers.MongoDBContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.util.*;
+import java.util.Map;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
 @KestraTest
-@Testcontainers
-class AggregateTest {
-    @Inject
-    private RunContextFactory runContextFactory;
-
-    @Container
-    static MongoDBContainer mongoDBContainer = new MongoDBContainer(DockerImageName.parse("mongo:7.0"))
-            .withExposedPorts(27017);
-
-    private static String connectionUri;
+class AggregateTest extends MongoDbContainer {
     private static final String DATABASE_NAME = "test_db";
     private static final String COLLECTION_NAME = "test_collection";
 
-    @BeforeAll
-    static void setupContainer() {
-        mongoDBContainer.start();
-        connectionUri = mongoDBContainer.getConnectionString();
-        
-        // Insert test data
-        try (MongoClient client = MongoClients.create(connectionUri)) {
-            MongoDatabase database = client.getDatabase(DATABASE_NAME);
-            MongoCollection<Document> collection = database.getCollection(COLLECTION_NAME);
-            
-            // Clear any existing data
-            collection.drop();
-            
-            // Insert sample documents for testing
-            List<Document> documents = Arrays.asList(
-                new Document("_id", 1)
-                    .append("title", "Book One")
-                    .append("author", "Author A")
-                    .append("category", "Fiction")
-                    .append("price", 25.99)
-                    .append("quantity", 100)
-                    .append("status", "available"),
-                new Document("_id", 2)
-                    .append("title", "Book Two")
-                    .append("author", "Author B")
-                    .append("category", "Fiction")
-                    .append("price", 30.50)
-                    .append("quantity", 50)
-                    .append("status", "available"),
-                new Document("_id", 3)
-                    .append("title", "Book Three")
-                    .append("author", "Author A")
-                    .append("category", "Science")
-                    .append("price", 45.00)
-                    .append("quantity", 0)
-                    .append("status", "out_of_stock"),
-                new Document("_id", 4)
-                    .append("title", "Book Four")
-                    .append("author", "Author C")
-                    .append("category", "Science")
-                    .append("price", 35.99)
-                    .append("quantity", 75)
-                    .append("status", "available"),
-                new Document("_id", 5)
-                    .append("title", "Book Five")
-                    .append("author", "Author B")
-                    .append("category", "History")
-                    .append("price", 28.00)
-                    .append("quantity", 30)
-                    .append("status", "available")
-            );
-            
-            collection.insertMany(documents);
-        }
-    }
-
-    @AfterAll
-    static void teardownContainer() {
-        if (mongoDBContainer != null && mongoDBContainer.isRunning()) {
-            mongoDBContainer.stop();
-        }
-    }
 
     @SuppressWarnings("unchecked")
     @Test
@@ -259,7 +178,7 @@ class AggregateTest {
                 .build())
             .database(Property.ofValue(DATABASE_NAME))
             .collection(Property.ofValue(COLLECTION_NAME))
-            .pipeline(Property.ofValue(Arrays.asList(
+            .pipeline(Property.ofValue(Arrays.<Map<String, Object>>asList(
                 ImmutableMap.of("$match", ImmutableMap.of(
                     "quantity", ImmutableMap.of("$gt", 0)
                 )),
