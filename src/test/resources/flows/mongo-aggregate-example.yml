@@ -84,7 +84,7 @@ tasks:
             $gt: 0
     allowDiskUse: true
     maxTimeMs: 30000
-    store: true
+    store: STORE
 
   # Time-based aggregation for reporting
   - id: monthly_revenue_report

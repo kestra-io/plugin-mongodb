@@ -4,6 +4,7 @@ import com.google.common.collect.ImmutableMap;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.runners.RunContextFactory;
@@ -21,9 +22,52 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
 @KestraTest
-class FindTest {
-    @Inject
-    private RunContextFactory runContextFactory;
+class FindTest extends MongoDbContainer {
+
+    @BeforeEach
+    void setUp() {
+        // Set up test data for samples.books collection
+        try (MongoClient client = MongoClients.create(connectionUri)) {
+            MongoDatabase database = client.getDatabase("samples");
+            MongoCollection<Document> collection = database.getCollection("books");
+
+            // Clear existing data
+            collection.drop();
+
+            // Insert test documents - create 36 books with pageCount > 600
+            List<Document> books = new ArrayList<>();
+
+            // First book with highest pageCount (1101)
+            books.add(new Document("_id", 70)
+                .append("title", "Advanced Java Programming")
+                .append("pageCount", 1101)
+                .append("publishedDate", Instant.parse("2000-08-01T07:00:00Z")));
+
+            // Second book
+            books.add(new Document("_id", 315)
+                .append("title", "Database Systems")
+                .append("pageCount", 950)
+                .append("publishedDate", Instant.parse("2001-05-15T08:00:00Z")));
+
+            // Add 34 more books with pageCount > 600 (decreasing order by pageCount)
+            for (int i = 1; i <= 34; i++) {
+                books.add(new Document("_id", i)
+                    .append("title", "Book " + i)
+                    .append("pageCount", 900 - (i * 5)) // Starts at 895, decreases by 5 each time, all > 600
+                    .append("publishedDate", Instant.parse("200" + (i % 9 + 1) + "-01-01T00:00:00Z")));
+            }
+
+            // Also add some books with pageCount <= 600 to ensure filter works
+            for (int i = 100; i < 110; i++) {
+                books.add(new Document("_id", i)
+                    .append("title", "Small Book " + i)
+                    .append("pageCount", 300 + (i % 10) * 10) // 300-390 pages
+                    .append("publishedDate", Instant.parse("2010-01-01T00:00:00Z")));
+            }
+
+            collection.insertMany(books);
+        }
+    }
 
     @SuppressWarnings("unchecked")
     @Test
@@ -32,7 +76,7 @@ class FindTest {
 
         Find find = Find.builder()
             .connection(MongoDbConnection.builder()
-                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
+                .uri(Property.ofValue(connectionUri))
                 .build())
             .database(Property.ofValue("samples"))
             .collection(Property.ofValue("books"))
@@ -66,7 +110,7 @@ class FindTest {
 
         var insertOneOutput = InsertOne.builder()
             .connection(MongoDbConnection.builder()
-                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
+                .uri(Property.ofValue(connectionUri))
                 .build())
             .database(Property.ofValue("samples"))
             .collection(Property.ofValue("books"))
@@ -78,7 +122,7 @@ class FindTest {
 
         Find find = Find.builder()
             .connection(MongoDbConnection.builder()
-                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
+                .uri(Property.ofValue(connectionUri))
                 .build())
             .database(Property.ofValue("samples"))
             .collection(Property.ofValue("books"))

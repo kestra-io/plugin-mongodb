@@ -11,6 +11,7 @@ import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.JacksonMapper;
 import io.kestra.core.junit.annotations.KestraTest;
 import org.bson.Document;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.BufferedReader;
@@ -25,6 +26,61 @@ import static org.hamcrest.Matchers.*;
 class AggregateTest extends MongoDbContainer {
     private static final String DATABASE_NAME = "test_db";
     private static final String COLLECTION_NAME = "test_collection";
+
+    @BeforeEach
+    void setUp() {
+        // Set up test data before each test
+        try (MongoClient client = MongoClients.create(connectionUri)) {
+            MongoDatabase database = client.getDatabase(DATABASE_NAME);
+            MongoCollection<Document> collection = database.getCollection(COLLECTION_NAME);
+
+            // Clear existing data
+            collection.drop();
+
+            // Insert test documents
+            collection.insertMany(Arrays.asList(
+                new Document("_id", 1)
+                    .append("title", "Book One")
+                    .append("author", "Author A")
+                    .append("category", "Fiction")
+                    .append("price", 25.99)
+                    .append("quantity", 10)
+                    .append("status", "available"),
+
+                new Document("_id", 2)
+                    .append("title", "Book Two")
+                    .append("author", "Author B")
+                    .append("category", "Non-Fiction")
+                    .append("price", 35.50)
+                    .append("quantity", 5)
+                    .append("status", "available"),
+
+                new Document("_id", 3)
+                    .append("title", "Book Three")
+                    .append("author", "Author C")
+                    .append("category", "Science")
+                    .append("price", 45.99)
+                    .append("quantity", 3)
+                    .append("status", "available"),
+
+                new Document("_id", 4)
+                    .append("title", "Book Four")
+                    .append("author", "Author A")
+                    .append("category", "Fiction")
+                    .append("price", 19.99)
+                    .append("quantity", 8)
+                    .append("status", "available"),
+
+                new Document("_id", 5)
+                    .append("title", "Book Five")
+                    .append("author", "Author B")
+                    .append("category", "Technology")
+                    .append("price", 55.00)
+                    .append("quantity", 0)
+                    .append("status", "out_of_stock")
+            ));
+        }
+    }
 
 
     @SuppressWarnings("unchecked")

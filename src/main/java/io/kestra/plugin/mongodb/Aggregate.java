@@ -176,25 +176,33 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
                 aggregate.batchSize(batch);
             }
 
-            Output.OutputBuilder builder = Output.builder();
+            Output.OutputBuilder outputBuilder = Output.builder();
 
-            FetchType fetchType = runContext.render(this.store).as(FetchType.class).orElse(FetchType.FETCH);
-            if (fetchType == FetchType.STORE) {
-                Pair<URI, Long> store = this.store(runContext, aggregate);
+            switch (runContext.render(this.store).as(FetchType.class).orElse(FetchType.FETCH)) {
+                case FETCH:
+                    Pair<List<Object>, Long> fetch = this.fetch(aggregate);
+                    outputBuilder
+                        .rows(fetch.getLeft())
+                        .size(fetch.getRight());
+                    break;
 
-                builder
-                    .uri(store.getLeft())
-                    .size(store.getRight());
-            } else if (fetchType == FetchType.FETCH) {
-                Pair<List<Object>, Long> fetch = this.fetch(aggregate);
+                case STORE:
+                    Pair<URI, Long> store = this.store(runContext, aggregate);
+                    outputBuilder
+                        .uri(store.getLeft())
+                        .size(store.getRight());
+                    break;
 
-                builder
-                    .rows(fetch.getLeft())
-                    .size(fetch.getRight());
+                default:
+                    // FETCH_ONE and NONE not implemented for aggregation
+                    Pair<List<Object>, Long> defaultFetch = this.fetch(aggregate);
+                    outputBuilder
+                        .rows(defaultFetch.getLeft())
+                        .size(defaultFetch.getRight());
+                    break;
             }
 
-            Output output = builder
-                .build();
+            Output output = outputBuilder.build();
 
             runContext.metric(Counter.of(
                 "records", output.getSize(),
