@@ -6,6 +6,7 @@ import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import io.kestra.core.models.property.Property;
+import io.kestra.core.models.tasks.common.FetchType;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.JacksonMapper;
 import io.kestra.core.junit.annotations.KestraTest;
@@ -146,7 +147,7 @@ class AggregateTest extends MongoDbContainer {
                     "avgPrice", ImmutableMap.of("$avg", "$price")
                 ))
             )))
-            .store(Property.ofValue(true))
+            .store(Property.ofValue(FetchType.STORE))
             .build();
 
         Aggregate.Output output = aggregate.run(runContext);

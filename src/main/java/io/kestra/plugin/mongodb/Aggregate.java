@@ -6,7 +6,7 @@ import com.mongodb.client.MongoCollection;
 import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.executions.metrics.Counter;
-import io.kestra.core.models.executions.statistics.DailyExecutionStatistics.Duration;
+import java.time.Duration;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.RunnableTask;
 import io.kestra.core.runners.RunContext;
@@ -127,7 +127,7 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
         description = "Sets the maximum execution time on the server for this operation."
     )
     @Builder.Default
-    private Property<Integer> maxTimeMs = Property.ofValue(Duration.ofSeconds(60).toMillis());
+    private Property<Integer> maxTimeMs = Property.ofValue((int) Duration.ofSeconds(60).toMillis());
 
     @Schema(
         title = "Batch size for cursor.",
@@ -178,13 +178,14 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
 
             Output.OutputBuilder builder = Output.builder();
 
-            if (runContext.render(this.store).as(Boolean.class).orElseThrow()) {
+            FetchType fetchType = runContext.render(this.store).as(FetchType.class).orElse(FetchType.FETCH);
+            if (fetchType == FetchType.STORE) {
                 Pair<URI, Long> store = this.store(runContext, aggregate);
 
                 builder
                     .uri(store.getLeft())
                     .size(store.getRight());
-            } else {
+            } else if (fetchType == FetchType.FETCH) {
                 Pair<List<Object>, Long> fetch = this.fetch(aggregate);
 
                 builder
