@@ -24,9 +24,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
 @KestraTest
-class LoadTest {
-    @Inject
-    private RunContextFactory runContextFactory;
+class LoadTest extends MongoDbContainer {
 
     @Inject
     private StorageInterface storageInterface;
@@ -49,7 +47,7 @@ class LoadTest {
 
         Load put = Load.builder()
             .connection(MongoDbConnection.builder()
-                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
+                .uri(Property.ofValue(connectionUri))
                 .build())
             .database(Property.ofValue(database))
             .collection(Property.ofValue("load"))
