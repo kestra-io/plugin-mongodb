@@ -1,8 +1,5 @@
 package io.kestra.plugin.mongodb;
 
-import com.github.dockerjava.api.model.ExposedPort;
-import com.github.dockerjava.api.model.PortBinding;
-import com.github.dockerjava.api.model.Ports;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import io.kestra.core.junit.annotations.KestraTest;
@@ -11,8 +8,6 @@ import jakarta.inject.Inject;
 import org.testcontainers.containers.MongoDBContainer;
 import org.testcontainers.utility.DockerImageName;
 
-import java.util.List;
-
 @KestraTest
 public class MongoDbContainer {
 
@@ -20,19 +15,10 @@ public class MongoDbContainer {
     protected static String connectionUri;
 
     static {
-        mongoDBContainer = new MongoDBContainer(DockerImageName.parse("mongo:8.0"))
-            .withExposedPorts(27017)
-            .withCreateContainerCmdModifier(cmd -> cmd.withHostConfig(
-                cmd.getHostConfig().withPortBindings(
-                    List.of(new PortBinding(
-                        Ports.Binding.bindPort(27017),
-                        new ExposedPort(27017)
-                    ))
-                )
-            ));
+        mongoDBContainer = new MongoDBContainer(DockerImageName.parse("mongo:8.0"));
 
         mongoDBContainer.start();
-        connectionUri = "mongodb://localhost:27017";
+        connectionUri = mongoDBContainer.getConnectionString();
 
         // Set system property for the connection URI that the flows can use
         System.setProperty("mongodb.uri", connectionUri);
