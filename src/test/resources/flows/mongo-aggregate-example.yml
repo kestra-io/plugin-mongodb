@@ -1,0 +1,120 @@
+id: mongodb_aggregate_pipeline
+namespace: company.team
+
+tasks:
+  # Simple aggregation example - Group sales by category
+  - id: sales_by_category
+    type: io.kestra.plugin.mongodb.Aggregate
+    connection:
+      uri: "mongodb://root:example@localhost:27017/test_db?authSource=admin"
+    database: "sales_db"
+    collection: "transactions"
+    pipeline:
+      - $match:
+          status: "completed"
+      - $group:
+          _id: "$category"
+          totalAmount:
+            $sum: "$amount"
+          averageAmount:
+            $avg: "$amount"
+          transactionCount:
+            $sum: 1
+      - $sort:
+          totalAmount: -1
+      - $limit: 10
+
+  # Complex aggregation with lookup and transformation
+  - id: user_analytics
+    type: io.kestra.plugin.mongodb.Aggregate
+    connection:
+      uri: "mongodb://root:example@localhost:27017/test_db?authSource=admin"
+    database: "analytics_db"
+    collection: "users"
+    pipeline:
+      - $lookup:
+          from: "orders"
+          localField: "_id"
+          foreignField: "userId"
+          as: "userOrders"
+      - $lookup:
+          from: "reviews"
+          localField: "_id"
+          foreignField: "userId"
+          as: "userReviews"
+      - $addFields:
+          totalOrders:
+            $size: "$userOrders"
+          totalSpent:
+            $sum: "$userOrders.amount"
+          avgOrderValue:
+            $ifNull:
+              - $divide:
+                  - $sum: "$userOrders.amount"
+                  - $size: "$userOrders"
+              - 0
+          reviewCount:
+            $size: "$userReviews"
+          avgRating:
+            $avg: "$userReviews.rating"
+      - $project:
+          name: 1
+          email: 1
+          registrationDate: 1
+          totalOrders: 1
+          totalSpent: 1
+          avgOrderValue: 1
+          reviewCount: 1
+          avgRating: 1
+          customerSegment:
+            $switch:
+              branches:
+                - case:
+                    $gte: ["$totalSpent", 1000]
+                  then: "Premium"
+                - case:
+                    $gte: ["$totalSpent", 500]
+                  then: "Gold"
+                - case:
+                    $gte: ["$totalSpent", 100]
+                  then: "Silver"
+              default: "Bronze"
+      - $match:
+          totalOrders:
+            $gt: 0
+    allowDiskUse: true
+    maxTimeMs: 30000
+    store: STORE
+
+  # Time-based aggregation for reporting
+  - id: monthly_revenue_report
+    type: io.kestra.plugin.mongodb.Aggregate
+    connection:
+      uri: "mongodb://root:example@localhost:27017/test_db?authSource=admin"
+    database: "reporting_db"
+    collection: "sales"
+    pipeline:
+      - $match:
+          createdAt:
+            $gte: "2024-01-01T00:00:00Z"
+      - $group:
+          _id:
+            year:
+              $year: "$createdAt"
+            month:
+              $month: "$createdAt"
+          revenue:
+            $sum: "$amount"
+          orderCount:
+            $sum: 1
+          uniqueCustomers:
+            $addToSet: "$customerId"
+      - $addFields:
+          uniqueCustomerCount:
+            $size: "$uniqueCustomers"
+      - $project:
+          uniqueCustomers: 0
+      - $sort:
+          "_id.year": 1
+          "_id.month": 1
+    batchSize: 500

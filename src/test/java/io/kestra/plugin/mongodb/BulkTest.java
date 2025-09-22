@@ -22,9 +22,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
 @KestraTest
-class BulkTest {
-    @Inject
-    private RunContextFactory runContextFactory;
+class BulkTest extends MongoDbContainer {
 
     @Inject
     private StorageInterface storageInterface;
@@ -55,7 +53,7 @@ class BulkTest {
 
         Bulk put = Bulk.builder()
             .connection(MongoDbConnection.builder()
-                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
+                .uri(Property.ofValue(connectionUri))
                 .build())
             .database(Property.ofValue(database))
             .collection(Property.ofValue("bulk"))

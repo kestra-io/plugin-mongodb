@@ -1,0 +1,23 @@
+id: mongodb_aggregate_simple
+namespace: io.kestra.tests
+
+tasks:
+  # Simple aggregation test - just verify the task can be created and validated
+  - id: simple_aggregate
+    type: io.kestra.plugin.mongodb.Aggregate
+    connection:
+      uri: "mongodb://root:example@localhost:27017/test_db?authSource=admin"
+    database: "test_db"
+    collection: "test_collection"
+    pipeline:
+      - $match:
+          status: "active"
+      - $group:
+          _id: "$category"
+          count:
+            $sum: 1
+      - $sort:
+          count: -1
+    allowDiskUse: true
+    maxTimeMs: 5000
+    batchSize: 100

@@ -3,10 +3,7 @@ package io.kestra.plugin.mongodb;
 import com.google.common.collect.ImmutableMap;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
-import io.kestra.core.runners.RunContextFactory;
 import io.kestra.core.utils.IdUtils;
-import io.kestra.core.junit.annotations.KestraTest;
-import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -16,10 +13,7 @@ import java.util.Map;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
-@KestraTest
-class CrudTest {
-    @Inject
-    private RunContextFactory runContextFactory;
+class CrudTest extends MongoDbContainer {
 
     @SuppressWarnings("unchecked")
     @Test
@@ -28,7 +22,7 @@ class CrudTest {
         String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
 
         InsertOne insert = InsertOne.builder()
-            .connection(MongoDbConnection.builder().uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin")).build())
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
             .database(Property.ofValue(database))
             .collection(Property.ofValue("insert"))
             .document(ImmutableMap.of(
@@ -41,7 +35,7 @@ class CrudTest {
         assertThat(insertOutput.getInsertedId() != null, is(true));
 
         Update update = Update.builder()
-            .connection(MongoDbConnection.builder().uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin")).build())
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
             .database(Property.ofValue(database))
             .collection(Property.ofValue("insert"))
             .operation(Property.ofValue(Update.Operation.REPLACE_ONE))
@@ -59,7 +53,7 @@ class CrudTest {
 
 
         update = Update.builder()
-            .connection(MongoDbConnection.builder().uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin")).build())
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
             .database(Property.ofValue(database))
             .collection(Property.ofValue("insert"))
             .document("{\"$set\": { \"tags\": [\"blue\", \"green\", \"red\"]}}")
@@ -73,7 +67,7 @@ class CrudTest {
 
         Find find = Find.builder()
             .connection(MongoDbConnection.builder()
-                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
+                .uri(Property.ofValue(connectionUri))
                 .build())
             .database(Property.ofValue(database))
             .collection(Property.ofValue("insert"))
@@ -88,7 +82,7 @@ class CrudTest {
 
         Delete delete = Delete.builder()
             .connection(MongoDbConnection.builder()
-                .uri(Property.ofValue("mongodb://root:example@localhost:27017/?authSource=admin"))
+                .uri(Property.ofValue(connectionUri))
                 .build())
             .database(Property.ofValue(database))
             .collection(Property.ofValue("insert"))
