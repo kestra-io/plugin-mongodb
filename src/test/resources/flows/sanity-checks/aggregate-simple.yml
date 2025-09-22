@@ -6,7 +6,7 @@ tasks:
   - id: simple_aggregate
     type: io.kestra.plugin.mongodb.Aggregate
     connection:
-      uri: "mongodb://localhost:27017"
+      uri: "mongodb://root:example@localhost:27017/test_db?authSource=admin"
     database: "test_db"
     collection: "test_collection"
     pipeline:

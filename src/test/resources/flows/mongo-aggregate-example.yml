@@ -6,7 +6,7 @@ tasks:
   - id: sales_by_category
     type: io.kestra.plugin.mongodb.Aggregate
     connection:
-      uri: "mongodb://localhost:27017"
+      uri: "mongodb://root:example@localhost:27017/test_db?authSource=admin"
     database: "sales_db"
     collection: "transactions"
     pipeline:
@@ -28,7 +28,7 @@ tasks:
   - id: user_analytics
     type: io.kestra.plugin.mongodb.Aggregate
     connection:
-      uri: "mongodb://localhost:27017"
+      uri: "mongodb://root:example@localhost:27017/test_db?authSource=admin"
     database: "analytics_db"
     collection: "users"
     pipeline:
@@ -90,7 +90,7 @@ tasks:
   - id: monthly_revenue_report
     type: io.kestra.plugin.mongodb.Aggregate
     connection:
-      uri: "mongodb://localhost:27017"
+      uri: "mongodb://root:example@localhost:27017/test_db?authSource=admin"
     database: "reporting_db"
     collection: "sales"
     pipeline:

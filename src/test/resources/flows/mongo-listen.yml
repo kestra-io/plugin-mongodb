@@ -5,7 +5,7 @@ triggers:
   - id: watch
     type: io.kestra.plugin.mongodb.Trigger
     connection:
-      uri: mongodb://localhost:27017
+      uri: "mongodb://root:example@localhost:27017/test_db?authSource=admin"
     database: samples
     collection: books
     filter:
