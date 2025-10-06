@@ -7,7 +7,7 @@ plugins {
     id "com.adarshr.test-logger" version "4.0.0"
     id "com.gradleup.shadow" version "9.1.0"
     id 'signing'
-    id "com.github.ben-manes.versions" version "0.52.0"
+    id "com.github.ben-manes.versions" version "0.53.0"
     id 'net.researchgate.release' version '3.1.0'
 }
 
@@ -95,7 +95,7 @@ dependencies {
     testImplementation "org.junit.jupiter:junit-jupiter-engine"
     testImplementation "org.hamcrest:hamcrest"
     testImplementation "org.hamcrest:hamcrest-library"
-    
+
     // testcontainers
     testImplementation "org.testcontainers:testcontainers:1.19.3"
     testImplementation "org.testcontainers:mongodb:1.19.3"
