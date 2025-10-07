@@ -71,7 +71,7 @@ import jakarta.validation.constraints.NotNull;
 )
 public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Output> {
     @Schema(
-        title = "MongoDB document.",
+        title = "MongoDB document",
         description = "Can be a BSON string or a map."
     )
     @PluginProperty(dynamic = true)
@@ -107,12 +107,12 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
     @Getter
     public static class Output implements io.kestra.core.models.tasks.Output {
         @Schema(
-            title = "The inserted ID."
+            title = "The inserted document ID"
         )
         private String insertedId;
 
         @Schema(
-            title = "Whether the write was acknowledged."
+            title = "Whether the write was acknowledged"
         )
         private Boolean wasAcknowledged;
     }

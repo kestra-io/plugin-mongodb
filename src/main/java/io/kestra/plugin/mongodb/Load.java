@@ -57,12 +57,12 @@ import static io.kestra.core.utils.Rethrow.throwFunction;
 )
 public class Load extends AbstractLoad {
     @Schema(
-        title = "Use this key as ID."
+        title = "Use this key as ID"
     )
     private Property<String> idKey;
 
     @Schema(
-        title = "Whether to remove idKey from the final document."
+        title = "Whether to remove idKey from the final document"
     )
     @Builder.Default
     private Property<Boolean> removeIdKey = Property.ofValue(true);

@@ -52,14 +52,14 @@ import jakarta.validation.constraints.NotNull;
 )
 public class Delete extends AbstractTask implements RunnableTask<Delete.Output> {
     @Schema(
-        title = "MongoDB BSON filter.",
-        description = "Can be a BSON string, or a map."
+        title = "MongoDB BSON filter",
+        description = "Can be a BSON string or a map."
     )
     @PluginProperty(dynamic = true)
     private Object filter;
 
     @Schema(
-        title = "Operation to use."
+        title = "Operation to use"
     )
     @Builder.Default
     @NotNull
@@ -105,12 +105,12 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
     @Getter
     public static class Output implements io.kestra.core.models.tasks.Output {
         @Schema(
-            title = "Whether the write was acknowledged."
+            title = "Whether the write was acknowledged"
         )
         private Boolean wasAcknowledged;
 
         @Schema(
-            title = "The number of documents deleted."
+            title = "The number of documents deleted"
         )
         private final long deletedCount;
     }
