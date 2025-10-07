@@ -81,39 +81,39 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 )
 public class Find extends AbstractTask implements RunnableTask<Find.Output> {
     @Schema(
-        title = "MongoDB BSON filter.",
+        title = "MongoDB BSON filter",
         description = "Can be a BSON string or a map."
     )
     @PluginProperty(dynamic = true)
     private Object filter;
 
     @Schema(
-        title = "MongoDB BSON projection.",
+        title = "MongoDB BSON projection",
         description = "Can be a BSON string or a map."
     )
     @PluginProperty(dynamic = true)
     private Object projection;
 
     @Schema(
-        title = "MongoDB BSON sort.",
+        title = "MongoDB BSON sort",
         description = "Can be a BSON string or a map."
     )
     @PluginProperty(dynamic = true)
     private Object sort;
 
     @Schema(
-        title = "The number of records to return."
+        title = "The number of records to return"
     )
     private Property<Integer> limit;
 
     @Schema(
-        title = "The number of records to skip."
+        title = "The number of records to skip"
     )
     private Property<Integer> skip;
 
 
     @Schema(
-        title = "Whether to store the data from the query result into an ion serialized data file."
+        title = "Whether to store the data from the query result into an Ion-serialized data file"
     )
     @Builder.Default
     private Property<Boolean> store = Property.ofValue(false);

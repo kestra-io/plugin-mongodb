@@ -18,7 +18,7 @@ import jakarta.validation.constraints.NotNull;
 @Getter
 public class MongoDbConnection {
     @Schema(
-        title = "Connection string to MongoDB server.",
+        title = "Connection string to MongoDB server",
         description = "[URL format](https://docs.mongodb.com/manual/reference/connection-string/) " +
             "like `mongodb://mongodb0.example.com:27017`"
     )

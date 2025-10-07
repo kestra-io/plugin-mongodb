@@ -79,7 +79,7 @@ import jakarta.validation.constraints.NotNull;
 )
 public class Update extends AbstractTask implements RunnableTask<Update.Output> {
     @Schema(
-        title = "MongoDB document.",
+        title = "MongoDB document",
         description = "Can be a BSON string or a map."
     )
     @PluginProperty(dynamic = true)
@@ -87,7 +87,7 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
     private Object document;
 
     @Schema(
-        title = "MongoDB BSON filter.",
+        title = "MongoDB BSON filter",
         description = "Can be a BSON string or a map."
     )
     @PluginProperty(dynamic = true)
@@ -95,7 +95,7 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
     private Object filter;
 
     @Schema(
-        title = "Operation to use."
+        title = "Operation to use"
     )
     @Builder.Default
     private Property<Operation> operation = Property.ofValue(Operation.UPDATE_ONE);
@@ -146,24 +146,24 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
     @Getter
     public static class Output implements io.kestra.core.models.tasks.Output {
         @Schema(
-            title = "The upserted ID.",
+            title = "The upserted ID",
             description = "Will be null for `replace` operation."
         )
         @Nullable
         private String upsertedId;
 
         @Schema(
-            title = "Whether the write was acknowledged."
+            title = "Whether the write was acknowledged"
         )
         private Boolean wasAcknowledged;
 
         @Schema(
-            title = "The number of documents matched by the query."
+            title = "The number of documents matched by the query"
         )
         private final long matchedCount;
 
         @Schema(
-            title = "The number of documents modified by the update."
+            title = "The number of documents modified by the update"
         )
         private final Long modifiedCount;
     }
