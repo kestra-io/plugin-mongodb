@@ -4,6 +4,7 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.result.UpdateResult;
 import io.kestra.core.models.annotations.Example;
+import io.kestra.core.models.annotations.Metric;
 import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.metrics.Counter;
@@ -75,6 +76,14 @@ import jakarta.validation.constraints.NotNull;
                     document: "{"$set": { "tags": ["blue", "green", "red"]}}"
                 """
         ),
+    },
+    metrics = {
+        @Metric(
+            name = "updated.count",
+            type = Counter.TYPE,
+            unit = "count",
+            description = "Number of documents updated in MongoDB"
+        )
     }
 )
 public class Update extends AbstractTask implements RunnableTask<Update.Output> {
