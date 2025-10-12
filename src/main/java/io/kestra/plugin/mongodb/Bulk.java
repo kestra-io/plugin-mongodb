@@ -2,6 +2,7 @@ package io.kestra.plugin.mongodb;
 
 import com.mongodb.client.model.*;
 import io.kestra.core.models.annotations.Example;
+import io.kestra.core.models.annotations.Metric;
 import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.runners.RunContext;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -65,6 +66,20 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
                     collection: "my_collection"
                     from: "{{ outputs.make_actions.uri }}"
                 """
+        )
+    },
+    metrics = {
+        @Metric(
+            name = "records",
+            type = Counter.TYPE,
+            unit = "count",
+            description = "Number of documents processed in the bulk operation"
+        ),
+        @Metric(
+            name = "requests.count",
+            type = Counter.TYPE,
+            unit = "count",
+            description = "Number of bulk requests sent to MongoDB"
         )
     }
 )
