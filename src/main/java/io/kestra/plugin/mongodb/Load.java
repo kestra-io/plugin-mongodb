@@ -3,8 +3,10 @@ package io.kestra.plugin.mongodb;
 import com.mongodb.client.model.InsertOneModel;
 import com.mongodb.client.model.WriteModel;
 import io.kestra.core.models.annotations.Example;
+import io.kestra.core.models.annotations.Metric;
 import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.annotations.PluginProperty;
+import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.FileSerde;
@@ -52,6 +54,20 @@ import static io.kestra.core.utils.Rethrow.throwFunction;
                     collection: "my_collection"
                     from: "{{ inputs.file }}"
                 """
+        )
+    },
+    metrics = {
+        @Metric(
+            name = "records",
+            type = Counter.TYPE,
+            unit = "count",
+            description = "Number of documents processed in the bulk operation"
+        ),
+        @Metric(
+            name = "requests.count",
+            type = Counter.TYPE,
+            unit = "count",
+            description = "Number of bulk requests sent to MongoDB"
         )
     }
 )
