@@ -84,7 +84,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
             name = "records",
             type = Counter.TYPE,
             unit = "count",
-            description = "Number of records fetched from MongoDB"
+            description = "Number of documents fetched from MongoDB"
         )
     }
 )
