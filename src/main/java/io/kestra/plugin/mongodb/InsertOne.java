@@ -4,6 +4,7 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.result.InsertOneResult;
 import io.kestra.core.models.annotations.Example;
+import io.kestra.core.models.annotations.Metric;
 import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.metrics.Counter;
@@ -67,6 +68,14 @@ import jakarta.validation.constraints.NotNull;
                     document: "{{ outputs.task_id.data | json }}"
                 """
         ),
+    },
+    metrics = {
+        @Metric(
+            name = "inserted.count",
+            type = Counter.TYPE,
+            unit = "count",
+            description = "Number of documents inserted into MongoDB"
+        )
     }
 )
 public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Output> {
