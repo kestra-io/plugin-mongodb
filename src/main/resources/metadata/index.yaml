@@ -1,0 +1,8 @@
+group: io.kestra.plugin.mongodb
+name: "mongodb"
+title: "MongoDB"
+description: "This sub-group of plugins contains tasks for using a MongoDB database."
+body: ""
+videos: []
+createdBy: "Kestra Core Team"
+managedBy: "Kestra Core Team"
