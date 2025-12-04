@@ -1,8 +1,8 @@
 group: io.kestra.plugin.mongodb
 name: "mongodb"
 title: "MongoDB"
-description: "This sub-group of plugins contains tasks for using a MongoDB database."
-body: ""
+description: "Tasks that query and manipulate MongoDB collections."
+body: "Provide connection URI/credentials and database/collection names to run find, aggregate, insert, update, delete operations, returning JSON results for downstream processing."
 videos: []
 createdBy: "Kestra Core Team"
 managedBy: "Kestra Core Team"
