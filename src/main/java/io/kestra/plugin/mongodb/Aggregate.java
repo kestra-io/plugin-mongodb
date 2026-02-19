@@ -38,7 +38,8 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Run aggregation pipeline on a MongoDB collection."
+    title = "Run an aggregation pipeline",
+    description = "Executes a MongoDB aggregation pipeline on a collection. Pipeline stages are rendered from Flow variables as BSON documents. Allows disk use by default, caps server execution at 60s, batches 1000 docs, and can fetch results or store them to internal storage."
 )
 @Plugin(
     examples = {
@@ -118,35 +119,36 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 )
 public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Output> {
     @Schema(
-        title = "MongoDB aggregation pipeline",
-        description = "List of pipeline stages as a BSON array or list of maps"
+        title = "Aggregation pipeline",
+        description = "List of stages as BSON string/array or map list rendered before execution."
     )
     @NotNull
     Property<List<Map<String, Object>>> pipeline;
 
     @Schema(
-        title = "Whether to allow disk usage for stages",
-        description = "Enables writing to temporary files when a pipeline stage exceeds the 100 megabyte limit"
+        title = "Allow disk use",
+        description = "Enables server-side temp files when a stage exceeds 100 MB; defaults to true."
     )
     @Builder.Default
     private Property<Boolean> allowDiskUse = Property.ofValue(true);
 
     @Schema(
-        title = "Maximum execution time in milliseconds",
-        description = "Sets the maximum execution time on the server for this operation"
+        title = "Max execution time (ms)",
+        description = "Server-side limit for the pipeline; defaults to 60000."
     )
     @Builder.Default
     private Property<Integer> maxTimeMs = Property.ofValue((int) Duration.ofSeconds(60).toMillis());
 
     @Schema(
-        title = "Batch size for cursor",
-        description = "Sets the number of documents to return per batch"
+        title = "Cursor batch size",
+        description = "Documents returned per batch; defaults to 1000."
     )
     @Builder.Default
     private Property<Integer> batchSize = Property.ofValue(1000);
 
     @Schema(
-        title = "Whether to store the data from the aggregation result into an Ion-serialized data file"
+        title = "Result handling",
+        description = "Fetch returns rows in output; STORE writes an Ion file to internal storage. Defaults to FETCH."
     )
     @Builder.Default
     private Property<FetchType> store = Property.ofValue(FetchType.FETCH);
@@ -257,19 +259,19 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
     @Getter
     public static class Output implements io.kestra.core.models.tasks.Output {
         @Schema(
-            title = "List containing the aggregation results",
-            description = "Only populated if `store` parameter is set to false"
+            title = "Aggregation rows",
+            description = "Present when result handling is FETCH."
         )
         private List<Object> rows;
 
         @Schema(
-            title = "The number of documents returned by the aggregation"
+            title = "Documents returned"
         )
         private Long size;
 
         @Schema(
-            title = "URI of the file containing the aggregation results",
-            description = "Only populated if `store` parameter is set to true"
+            title = "Stored result URI",
+            description = "Internal storage URI when result handling is STORE."
         )
         private URI uri;
     }

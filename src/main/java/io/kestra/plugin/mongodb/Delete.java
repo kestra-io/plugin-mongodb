@@ -26,7 +26,8 @@ import jakarta.validation.constraints.NotNull;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Delete one or more documents from a MongoDB collection."
+    title = "Delete documents from MongoDB",
+    description = "Runs deleteOne (default) or deleteMany on a collection. Filter supports BSON strings or maps rendered from Flow variables."
 )
 @Plugin(
     examples = {
@@ -61,14 +62,15 @@ import jakarta.validation.constraints.NotNull;
 )
 public class Delete extends AbstractTask implements RunnableTask<Delete.Output> {
     @Schema(
-        title = "MongoDB BSON filter",
-        description = "Can be a BSON string or a map."
+        title = "Query filter",
+        description = "BSON string or map rendered before execution."
     )
     @PluginProperty(dynamic = true)
     private Object filter;
 
     @Schema(
-        title = "Operation to use"
+        title = "Delete operation",
+        description = "DELETE_ONE (default) or DELETE_MANY."
     )
     @Builder.Default
     @NotNull
@@ -119,7 +121,7 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
         private Boolean wasAcknowledged;
 
         @Schema(
-            title = "The number of documents deleted"
+            title = "Documents deleted"
         )
         private final long deletedCount;
     }

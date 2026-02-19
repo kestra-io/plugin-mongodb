@@ -26,7 +26,8 @@ import jakarta.validation.constraints.NotNull;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Insert a document into a MongoDB collection."
+    title = "Insert one document into MongoDB",
+    description = "Renders a BSON document from Flow variables and inserts it with insertOne. Requires write access; document may be provided as JSON/BSON string or map."
 )
 @Plugin(
     examples = {
@@ -80,8 +81,8 @@ import jakarta.validation.constraints.NotNull;
 )
 public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Output> {
     @Schema(
-        title = "MongoDB document",
-        description = "Can be a BSON string or a map."
+        title = "Document to insert",
+        description = "BSON string or map rendered before execution."
     )
     @PluginProperty(dynamic = true)
     @NotNull
@@ -116,7 +117,7 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
     @Getter
     public static class Output implements io.kestra.core.models.tasks.Output {
         @Schema(
-            title = "The inserted document ID"
+            title = "Inserted document id"
         )
         private String insertedId;
 
