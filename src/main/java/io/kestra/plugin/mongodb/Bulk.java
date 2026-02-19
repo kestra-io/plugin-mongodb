@@ -33,15 +33,8 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Send a bulk request to MongoDB.",
-    description = """
-    Execute [Bulk](https://www.mongodb.com/docs/manual/reference/method/Bulk/) requests in MongoDB such as inserts and deletes. Below are sample file contents that can be provided as an input to the Bulk task:
-    ```
-    { "insertOne" : {"firstName": "John", "lastName": "Doe", "city": "Paris"}}
-    { "insertOne" : {"firstName": "Ravi", "lastName": "Singh", "city": "Mumbai"}}
-    { "deleteMany": {"filter": {"city": "Bengaluru"}}}
-    ```
-    """
+    title = "Run MongoDB bulkWrite from NDJSON",
+    description = "Reads newline-delimited bulk operations from internal storage and executes MongoDB bulkWrite. Supports insert/update/delete formats defined in MongoDB Bulk API (https://www.mongodb.com/docs/manual/reference/method/Bulk/). Inherits chunking from AbstractLoad (default 1000 per bulk request)."
 )
 @Plugin(
     examples = {

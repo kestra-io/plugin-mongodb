@@ -27,7 +27,8 @@ import jakarta.validation.constraints.NotNull;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Update or replace one or many documents in a MongoDB collection."
+    title = "Update or replace MongoDB documents",
+    description = "Runs MongoDB replaceOne, updateOne, or updateMany on a collection. Defaults to UPDATE_ONE; both filter and document accept BSON maps or strings and are rendered from Flow variables. Requires write access; upserts are not exposed."
 )
 @Plugin(
     examples = {
@@ -73,7 +74,7 @@ import jakarta.validation.constraints.NotNull;
                     filter:
                       _id:
                         $oid: 60930c39a982931c20ef6cd6
-                    document: "{"$set": { "tags": ["blue", "green", "red"]}}"
+                    document: '{"$set": { "tags": ["blue", "green", "red"]}}'
                 """
         ),
     },
@@ -88,23 +89,24 @@ import jakarta.validation.constraints.NotNull;
 )
 public class Update extends AbstractTask implements RunnableTask<Update.Output> {
     @Schema(
-        title = "MongoDB document",
-        description = "Can be a BSON string or a map."
+        title = "Update payload or replacement document",
+        description = "BSON string or map rendered before execution."
     )
     @PluginProperty(dynamic = true)
     @NotNull
     private Object document;
 
     @Schema(
-        title = "MongoDB BSON filter",
-        description = "Can be a BSON string or a map."
+        title = "Query filter",
+        description = "BSON string or map rendered before execution; selects documents to update."
     )
     @PluginProperty(dynamic = true)
     @NotNull
     private Object filter;
 
     @Schema(
-        title = "Operation to use"
+        title = "Update operation",
+        description = "One of UPDATE_ONE (default), UPDATE_MANY, or REPLACE_ONE."
     )
     @Builder.Default
     private Property<Operation> operation = Property.ofValue(Operation.UPDATE_ONE);
@@ -155,8 +157,8 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
     @Getter
     public static class Output implements io.kestra.core.models.tasks.Output {
         @Schema(
-            title = "The upserted ID",
-            description = "Will be null for `replace` operation."
+            title = "Upserted document id",
+            description = "Null unless MongoDB created a document during the write."
         )
         @Nullable
         private String upsertedId;

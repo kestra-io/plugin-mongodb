@@ -21,7 +21,8 @@ import java.util.Optional;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Trigger a flow if a periodically executed MongoDB query returns a non-empty result set."
+    title = "Poll MongoDB and trigger on results",
+    description = "Periodically runs a MongoDB find; if results are non-empty, starts a Flow with the rows or stored file. Uses Find task behavior (filter/projection/sort/limit/skip). Default interval is 60s and store is false, returning rows in trigger output."
 )
 @Plugin(
     examples = {
@@ -35,7 +36,7 @@ import java.util.Optional;
                 tasks:
                   - id: each
                     type: io.kestra.plugin.core.flow.ForEach
-				    values: "{{ trigger.rows }}"
+                    values: "{{ trigger.rows }}"
                     tasks:
                       - id: return
                         type: io.kestra.plugin.core.debug.Return
@@ -64,25 +65,59 @@ import java.util.Optional;
 )
 public class Trigger extends AbstractTrigger implements PollingTriggerInterface, TriggerOutput<Find.Output> {
 
+    @Schema(
+        title = "Polling interval",
+        description = "Duration between queries; defaults to PT60S."
+    )
     @Builder.Default
     private final Duration interval = Duration.ofSeconds(60);
 
     private MongoDbConnection connection;
 
+    @Schema(
+        title = "Database name"
+    )
     private Property<String> database;
 
+    @Schema(
+        title = "Collection name"
+    )
     private Property<String> collection;
 
+    @Schema(
+        title = "Query filter",
+        description = "BSON string or map rendered before execution."
+    )
     private Object filter;
 
+    @Schema(
+        title = "Projection",
+        description = "BSON string or map selecting fields to return."
+    )
     private Object projection;
 
+    @Schema(
+        title = "Sort",
+        description = "BSON string or map defining sort order."
+    )
     private Object sort;
 
+    @Schema(
+        title = "Limit",
+        description = "Maximum documents returned."
+    )
     private Property<Integer> limit;
 
+    @Schema(
+        title = "Skip",
+        description = "Documents to skip before returning results."
+    )
     private Property<Integer> skip;
 
+    @Schema(
+        title = "Store results",
+        description = "When true, writes results as Ion to internal storage; otherwise rows are kept in output. Defaults to false."
+    )
     @Builder.Default
     private Property<Boolean> store = Property.ofValue(false);
 

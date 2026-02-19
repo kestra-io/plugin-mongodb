@@ -31,7 +31,8 @@ import static io.kestra.core.utils.Rethrow.throwFunction;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Bulk load documents into a MongoDB using Kestra’s internal storage file."
+    title = "Bulk insert documents from internal storage",
+    description = "Reads a Kestra internal storage file of JSON/BSON records and inserts them with MongoDB bulkWrite. Inherits chunking (default 1000). Optionally derives _id from a field and removes that field."
 )
 @Plugin(
     examples = {
@@ -73,12 +74,14 @@ import static io.kestra.core.utils.Rethrow.throwFunction;
 )
 public class Load extends AbstractLoad {
     @Schema(
-        title = "Use this key as ID"
+        title = "Field used as _id",
+        description = "If set, value is converted to ObjectId and stored as _id."
     )
     private Property<String> idKey;
 
     @Schema(
-        title = "Whether to remove idKey from the final document"
+        title = "Remove idKey field",
+        description = "When true (default), drops the source field after copying it to _id."
     )
     @Builder.Default
     private Property<Boolean> removeIdKey = Property.ofValue(true);

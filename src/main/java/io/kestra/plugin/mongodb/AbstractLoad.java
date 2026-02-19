@@ -33,14 +33,16 @@ import reactor.core.publisher.Flux;
 @NoArgsConstructor
 public abstract class AbstractLoad extends AbstractTask implements RunnableTask<AbstractLoad.Output> {
     @Schema(
-        title = "The source file."
+        title = "Source file",
+        description = "Path in internal storage (kestra://...) containing BSON or JSON documents to stream into MongoDB."
     )
     @NotNull
     @PluginProperty(internalStorageURI = true)
     private Property<String> from;
 
     @Schema(
-        title = "Chunk size for every bulk request."
+        title = "Bulk chunk size",
+        description = "Number of write models sent per bulkWrite call; defaults to 1000."
     )
     @Builder.Default
     private Property<Integer> chunk = Property.ofValue(1000);
@@ -115,30 +117,35 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
     @Getter
     public static class Output implements io.kestra.core.models.tasks.Output {
         @Schema(
-            title = "The number of rows processed."
+            title = "Rows processed",
+            description = "Total records read from the source file."
         )
         private Long size;
 
         @Schema(
-            title = "The number of documents inserted by the write operation."
+            title = "Inserted documents",
+            description = "Count of documents created by bulk writes."
         )
         @Builder.Default
         private int insertedCount = 0;
 
         @Schema(
-            title = "The number of documents matched by updates or replacements in the write operation."
+            title = "Matched documents",
+            description = "Documents matched by update or replacement models."
         )
         @Builder.Default
         private int matchedCount = 0;
 
         @Schema(
-            title = "The number of documents deleted by the write operation."
+            title = "Deleted documents",
+            description = "Documents removed by bulk delete models."
         )
         @Builder.Default
         private int deletedCount = 0;
 
         @Schema(
-            title = "The number of documents modified by the write operation."
+            title = "Modified documents",
+            description = "Documents updated by bulk operations."
         )
         @Builder.Default
         private int modifiedCount = 0;

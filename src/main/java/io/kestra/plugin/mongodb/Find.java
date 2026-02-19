@@ -36,7 +36,8 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Find documents in a MongoDB collection."
+    title = "Query documents from MongoDB",
+    description = "Executes find on a collection with optional projection, sort, skip, and limit. Filter/projection/sort accept BSON strings or maps rendered from Flow variables. Results are fetched in-memory by default or stored as Ion in internal storage when `store` is true."
 )
 @Plugin(
     examples = {
@@ -90,39 +91,42 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 )
 public class Find extends AbstractTask implements RunnableTask<Find.Output> {
     @Schema(
-        title = "MongoDB BSON filter",
-        description = "Can be a BSON string or a map."
+        title = "Query filter",
+        description = "BSON string or map rendered before execution."
     )
     @PluginProperty(dynamic = true)
     private Object filter;
 
     @Schema(
-        title = "MongoDB BSON projection",
-        description = "Can be a BSON string or a map."
+        title = "Projection",
+        description = "BSON string or map selecting fields to return."
     )
     @PluginProperty(dynamic = true)
     private Object projection;
 
     @Schema(
-        title = "MongoDB BSON sort",
-        description = "Can be a BSON string or a map."
+        title = "Sort",
+        description = "BSON string or map defining sort order."
     )
     @PluginProperty(dynamic = true)
     private Object sort;
 
     @Schema(
-        title = "The number of records to return"
+        title = "Limit",
+        description = "Maximum documents returned."
     )
     private Property<Integer> limit;
 
     @Schema(
-        title = "The number of records to skip"
+        title = "Skip",
+        description = "Documents to skip before returning results."
     )
     private Property<Integer> skip;
 
 
     @Schema(
-        title = "Whether to store the data from the query result into an Ion-serialized data file"
+        title = "Store results",
+        description = "When true, writes results as Ion to internal storage; otherwise returns rows. Defaults to false."
     )
     @Builder.Default
     private Property<Boolean> store = Property.ofValue(false);
@@ -218,19 +222,19 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
     @Getter
     public static class Output implements io.kestra.core.models.tasks.Output {
         @Schema(
-            title = "List containing the fetched data.",
-            description = "Only populated if `store` parameter is set to false."
+            title = "Result rows",
+            description = "Present when store is false."
         )
         private List<Object> rows;
 
         @Schema(
-            title = "The number of rows fetched."
+            title = "Rows fetched"
         )
         private Long size;
 
         @Schema(
-            title = "URI of the file containing the fetched results.",
-            description = "Only populated if `store` parameter is set to true."
+            title = "Stored result URI",
+            description = "Internal storage URI when store is true."
         )
         private URI uri;
     }
