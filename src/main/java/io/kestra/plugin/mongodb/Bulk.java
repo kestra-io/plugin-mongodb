@@ -1,29 +1,32 @@
 package io.kestra.plugin.mongodb;
 
-import com.mongodb.client.model.*;
-import io.kestra.core.models.annotations.Example;
-import io.kestra.core.models.annotations.Metric;
-import io.kestra.core.models.executions.metrics.Counter;
-import io.kestra.core.models.annotations.Plugin;
-import io.kestra.core.runners.RunContext;
-import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.ToString;
-import lombok.experimental.SuperBuilder;
-import org.bson.BsonDocument;
-import org.bson.BsonValue;
-import org.bson.conversions.Bson;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.FluxSink;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+
+import org.bson.BsonDocument;
+import org.bson.BsonValue;
+import org.bson.conversions.Bson;
+
+import com.mongodb.client.model.*;
+
+import io.kestra.core.models.annotations.Example;
+import io.kestra.core.models.annotations.Metric;
+import io.kestra.core.models.annotations.Plugin;
+import io.kestra.core.models.executions.metrics.Counter;
+import io.kestra.core.runners.RunContext;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.ToString;
+import lombok.experimental.SuperBuilder;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 
 import static io.kestra.core.utils.Rethrow.throwConsumer;
 
@@ -43,7 +46,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
             code = """
                 id: mongodb_bulk
                 namespace: company.team
-                
+
                 tasks:
                   - id: make_actions
                     type: io.kestra.plugin.core.storage.Write
@@ -51,7 +54,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
                       { "insertOne" : {"firstName": "John", "lastName": "Doe", "city": "Paris"}}
                       { "insertOne" : {"firstName": "Ravi", "lastName": "Singh", "city": "Mumbai"}}
                       { "deleteMany": {"filter": {"city": "Bengaluru"}}}
-                
+
                   - id: bulk
                     type: io.kestra.plugin.mongodb.Bulk
                     connection:
@@ -85,7 +88,8 @@ public class Bulk extends AbstractLoad {
     }
 
     public Consumer<FluxSink<WriteModel<Bson>>> ndJSonReader(BufferedReader input) throws IOException {
-        return throwConsumer(s -> {
+        return throwConsumer(s ->
+        {
             String row;
 
             while ((row = input.readLine()) != null) {
@@ -96,7 +100,7 @@ public class Bulk extends AbstractLoad {
                     case "insertOne" -> new InsertOneModel<>(
                         operation.getValue().asDocument()
                     );
-                    case "replaceOne" ->  new ReplaceOneModel<>(
+                    case "replaceOne" -> new ReplaceOneModel<>(
                         operation.getValue().asDocument().get("filter").asDocument(),
                         operation.getValue().asDocument().get("replacement").asDocument(),
                         getReplaceOptions(operation.getValue().asDocument())
@@ -189,7 +193,8 @@ public class Bulk extends AbstractLoad {
             "backwards", value -> builder.backwards(value.asBoolean().getValue())
         );
 
-        document.forEach((key, value) -> {
+        document.forEach((key, value) ->
+        {
             if (collationOptions.containsKey(key)) {
                 collationOptions.get(key).accept(value);
             }

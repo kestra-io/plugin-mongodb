@@ -1,21 +1,5 @@
 package io.kestra.plugin.mongodb;
 
-import com.mongodb.bulk.BulkWriteResult;
-import com.mongodb.client.MongoClient;
-import com.mongodb.client.MongoCollection;
-import com.mongodb.client.model.WriteModel;
-import io.kestra.core.models.annotations.PluginProperty;
-import io.kestra.core.models.executions.metrics.Counter;
-import io.kestra.core.models.property.Property;
-import io.kestra.core.models.tasks.RunnableTask;
-import io.kestra.core.runners.RunContext;
-import io.kestra.core.serializers.FileSerde;
-import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.*;
-import lombok.experimental.SuperBuilder;
-import org.bson.conversions.Bson;
-import org.slf4j.Logger;
-
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.URI;
@@ -23,7 +7,26 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+
+import org.bson.conversions.Bson;
+import org.slf4j.Logger;
+
+import com.mongodb.bulk.BulkWriteResult;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.model.WriteModel;
+
+import io.kestra.core.models.annotations.PluginProperty;
+import io.kestra.core.models.executions.metrics.Counter;
+import io.kestra.core.models.property.Property;
+import io.kestra.core.models.tasks.RunnableTask;
+import io.kestra.core.runners.RunContext;
+import io.kestra.core.serializers.FileSerde;
+
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
+import lombok.*;
+import lombok.experimental.SuperBuilder;
 import reactor.core.publisher.Flux;
 
 @SuperBuilder
@@ -68,16 +71,19 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
 
             var renderedChunk = runContext.render(this.chunk).as(Integer.class).orElse(null);
             Flux<BulkWriteResult> flowable = this.source(runContext, inputStream)
-                .doOnNext(docWriteRequest -> {
+                .doOnNext(docWriteRequest ->
+                {
                     count.incrementAndGet();
                 })
                 .buffer(renderedChunk, renderedChunk)
-                .map(indexRequests -> {
+                .map(indexRequests ->
+                {
                     List<WriteModel<Bson>> bulkOperations = new ArrayList<>(indexRequests);
 
                     return collection.bulkWrite(bulkOperations);
                 })
-                .doOnNext(bulkItemResponse -> {
+                .doOnNext(bulkItemResponse ->
+                {
                     matchedCount.addAndGet(bulkItemResponse.getMatchedCount());
                     insertedCount.addAndGet(bulkItemResponse.getInsertedCount());
                     modifiedCount.addAndGet(bulkItemResponse.getModifiedCount());
@@ -86,16 +92,20 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
 
             // metrics & finalize
             Long requestCount = flowable.count().block();
-            runContext.metric(Counter.of(
-                "requests.count", requestCount,
-                "database", collection.getNamespace().getDatabaseName(),
-                "collection", collection.getNamespace().getCollectionName()
-            ));
-            runContext.metric(Counter.of(
-                "records", count.get(),
-                "database", collection.getNamespace().getDatabaseName(),
-                "collection", collection.getNamespace().getCollectionName()
-            ));
+            runContext.metric(
+                Counter.of(
+                    "requests.count", requestCount,
+                    "database", collection.getNamespace().getDatabaseName(),
+                    "collection", collection.getNamespace().getCollectionName()
+                )
+            );
+            runContext.metric(
+                Counter.of(
+                    "records", count.get(),
+                    "database", collection.getNamespace().getDatabaseName(),
+                    "collection", collection.getNamespace().getCollectionName()
+                )
+            );
 
             logger.info(
                 "Successfully sent {} requests for {} records",

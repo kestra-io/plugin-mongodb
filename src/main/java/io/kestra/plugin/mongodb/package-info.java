@@ -1,5 +1,5 @@
 @PluginSubGroup(
-    description = "This sub-group of plugins contains tasks for using a MongoDB database.",categories = {
+    description = "This sub-group of plugins contains tasks for using a MongoDB database.", categories = {
         PluginSubGroup.PluginCategory.DATA
     }
 )

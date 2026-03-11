@@ -1,8 +1,19 @@
 package io.kestra.plugin.mongodb;
 
+import java.io.*;
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
+
+import org.apache.commons.lang3.tuple.Pair;
+import org.bson.BsonDocument;
+import org.slf4j.Logger;
+
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
+
 import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Metric;
 import io.kestra.core.models.annotations.Plugin;
@@ -12,21 +23,11 @@ import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.RunnableTask;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.FileSerde;
+
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
-import org.apache.commons.lang3.tuple.Pair;
-import org.bson.BsonDocument;
-import org.bson.conversions.Bson;
-import org.slf4j.Logger;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-
-import java.io.*;
-import java.net.URI;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
 
 import static io.kestra.core.utils.Rethrow.throwConsumer;
 
@@ -123,7 +124,6 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
     )
     private Property<Integer> skip;
 
-
     @Schema(
         title = "Store results",
         description = "When true, writes results as Ion to internal storage; otherwise returns rows. Defaults to false."
@@ -178,11 +178,13 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
             Output output = builder
                 .build();
 
-            runContext.metric(Counter.of(
-                "records", output.getSize(),
-                "database", collection.getNamespace().getDatabaseName(),
-                "collection", collection.getNamespace().getCollectionName()
-            ));
+            runContext.metric(
+                Counter.of(
+                    "records", output.getSize(),
+                    "database", collection.getNamespace().getDatabaseName(),
+                    "collection", collection.getNamespace().getCollectionName()
+                )
+            );
 
             return output;
         }
@@ -207,7 +209,8 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         AtomicLong count = new AtomicLong();
 
         documents
-            .forEach(throwConsumer(bsonDocument -> {
+            .forEach(throwConsumer(bsonDocument ->
+            {
                 count.incrementAndGet();
                 result.add(MongoDbService.map(bsonDocument.toBsonDocument()));
             }));

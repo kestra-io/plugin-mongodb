@@ -1,18 +1,18 @@
 package io.kestra.plugin.mongodb;
 
-import io.kestra.core.exceptions.IllegalVariableEvaluationException;
-import io.kestra.core.runners.RunContext;
-import io.kestra.core.serializers.JacksonMapper;
-import org.bson.BsonDocument;
-import org.bson.BsonValue;
-
 import java.io.IOException;
 import java.time.Instant;
 import java.util.AbstractMap;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
+
+import org.bson.BsonDocument;
+import org.bson.BsonValue;
+
+import io.kestra.core.exceptions.IllegalVariableEvaluationException;
+import io.kestra.core.runners.RunContext;
+import io.kestra.core.serializers.JacksonMapper;
 
 public abstract class MongoDbService {
     @SuppressWarnings("unchecked")
@@ -60,10 +60,12 @@ public abstract class MongoDbService {
                     .asDocument()
                     .entrySet()
                     .stream()
-                    .map(e -> new AbstractMap.SimpleEntry<>(
-                        e.getKey(),
-                        map(e.getValue())
-                    ))
+                    .map(
+                        e -> new AbstractMap.SimpleEntry<>(
+                            e.getKey(),
+                            map(e.getValue())
+                        )
+                    )
                     // https://bugs.openjdk.java.net/browse/JDK-8148463
                     .collect(LinkedHashMap::new, (m, v) -> m.put(v.getKey(), v.getValue()), LinkedHashMap::putAll);
             case ARRAY:
@@ -72,10 +74,8 @@ public abstract class MongoDbService {
                     .map(MongoDbService::map)
                     .collect(Collectors.toList());
 
-
             case OBJECT_ID:
                 return doc.asObjectId().getValue().toString();
-
 
             case UNDEFINED:
                 throw new IllegalArgumentException("Undefined BsonValue:" + doc);

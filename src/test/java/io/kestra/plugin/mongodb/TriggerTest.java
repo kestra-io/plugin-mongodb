@@ -1,29 +1,5 @@
 package io.kestra.plugin.mongodb;
 
-import com.mongodb.client.MongoClient;
-import com.mongodb.client.MongoClients;
-import com.mongodb.client.MongoCollection;
-import com.mongodb.client.MongoDatabase;
-import io.kestra.core.junit.annotations.KestraTest;
-import org.bson.Document;
-import org.junit.jupiter.api.BeforeEach;
-import io.kestra.core.models.executions.Execution;
-import io.kestra.core.queues.QueueFactoryInterface;
-import io.kestra.core.queues.QueueInterface;
-import io.kestra.core.repositories.LocalFlowRepositoryLoader;
-import io.kestra.core.runners.FlowListeners;
-import io.kestra.core.runners.Worker;
-import io.kestra.scheduler.AbstractScheduler;
-import io.kestra.core.utils.IdUtils;
-import io.kestra.core.utils.TestsUtils;
-import io.kestra.jdbc.runner.JdbcScheduler;
-import io.kestra.worker.DefaultWorker;
-import io.micronaut.context.ApplicationContext;
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import org.junit.jupiter.api.Test;
-import reactor.core.publisher.Flux;
-
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,6 +8,31 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+
+import org.bson.Document;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoClients;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
+
+import io.kestra.core.junit.annotations.KestraTest;
+import io.kestra.core.models.executions.Execution;
+import io.kestra.core.queues.QueueFactoryInterface;
+import io.kestra.core.queues.QueueInterface;
+import io.kestra.core.repositories.LocalFlowRepositoryLoader;
+import io.kestra.core.runners.FlowListeners;
+import io.kestra.core.utils.TestsUtils;
+import io.kestra.jdbc.runner.JdbcScheduler;
+import io.kestra.scheduler.AbstractScheduler;
+import io.kestra.worker.DefaultWorker;
+
+import io.micronaut.context.ApplicationContext;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import reactor.core.publisher.Flux;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -66,16 +67,20 @@ public class TriggerTest extends MongoDbContainer {
             List<Document> books = new ArrayList<>();
 
             // First book with highest pageCount (1101)
-            books.add(new Document("_id", 70)
-                .append("title", "Essential Guide to Peoplesoft Development and Customization")
-                .append("pageCount", 1101)
-                .append("publishedDate", Instant.parse("2000-08-01T07:00:00Z")));
+            books.add(
+                new Document("_id", 70)
+                    .append("title", "Essential Guide to Peoplesoft Development and Customization")
+                    .append("pageCount", 1101)
+                    .append("publishedDate", Instant.parse("2000-08-01T07:00:00Z"))
+            );
 
             // Second book
-            books.add(new Document("_id", 315)
-                .append("title", "Database Systems")
-                .append("pageCount", 950)
-                .append("publishedDate", Instant.parse("2001-05-15T08:00:00Z")));
+            books.add(
+                new Document("_id", 315)
+                    .append("title", "Database Systems")
+                    .append("pageCount", 950)
+                    .append("publishedDate", Instant.parse("2001-05-15T08:00:00Z"))
+            );
 
             // Add 263 more books with pageCount > 50
             for (int i = 1; i <= 263; i++) {
@@ -83,10 +88,12 @@ public class TriggerTest extends MongoDbContainer {
                 if (pageCount <= 50) {
                     pageCount = 51 + (i % 100);
                 }
-                books.add(new Document("_id", 1000 + i)
-                    .append("title", "Book " + i)
-                    .append("pageCount", pageCount)
-                    .append("publishedDate", Instant.parse("200" + (i % 9 + 1) + "-01-01T00:00:00Z")));
+                books.add(
+                    new Document("_id", 1000 + i)
+                        .append("title", "Book " + i)
+                        .append("pageCount", pageCount)
+                        .append("publishedDate", Instant.parse("200" + (i % 9 + 1) + "-01-01T00:00:00Z"))
+                );
             }
 
             collection.insertMany(books);
@@ -122,7 +129,8 @@ public class TriggerTest extends MongoDbContainer {
             DefaultWorker worker = applicationContext.createBean(DefaultWorker.class, UUID.randomUUID().toString(), 8, null);
         ) {
             // wait for execution
-            Flux<Execution> receive = TestsUtils.receive(executionQueue, execution -> {
+            Flux<Execution> receive = TestsUtils.receive(executionQueue, execution ->
+            {
                 queueCount.countDown();
                 assertThat(execution.getLeft().getFlowId(), is("mongo-listen"));
             });

@@ -1,14 +1,16 @@
 package io.kestra.plugin.mongodb;
 
-import com.google.common.collect.ImmutableMap;
-import io.kestra.core.models.property.Property;
-import io.kestra.core.runners.RunContext;
-import io.kestra.core.utils.IdUtils;
-import org.junit.jupiter.api.Test;
-
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+
+import org.junit.jupiter.api.Test;
+
+import com.google.common.collect.ImmutableMap;
+
+import io.kestra.core.models.property.Property;
+import io.kestra.core.runners.RunContext;
+import io.kestra.core.utils.IdUtils;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -25,10 +27,12 @@ class CrudTest extends MongoDbContainer {
             .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
             .database(Property.ofValue(database))
             .collection(Property.ofValue("insert"))
-            .document(ImmutableMap.of(
-                "name", "{{ variable }}",
-                "tags", List.of("blue", "green", "red")
-            ))
+            .document(
+                ImmutableMap.of(
+                    "name", "{{ variable }}",
+                    "tags", List.of("blue", "green", "red")
+                )
+            )
             .build();
 
         InsertOne.Output insertOutput = insert.run(runContext);
@@ -39,41 +43,50 @@ class CrudTest extends MongoDbContainer {
             .database(Property.ofValue(database))
             .collection(Property.ofValue("insert"))
             .operation(Property.ofValue(Update.Operation.REPLACE_ONE))
-            .document(ImmutableMap.of(
-                "name", "{{ variable }}",
-                "tags", List.of("green", "red")
-            ))
-            .filter(ImmutableMap.of(
-                "_id", ImmutableMap.of("$oid", insertOutput.getInsertedId())
-            ))
+            .document(
+                ImmutableMap.of(
+                    "name", "{{ variable }}",
+                    "tags", List.of("green", "red")
+                )
+            )
+            .filter(
+                ImmutableMap.of(
+                    "_id", ImmutableMap.of("$oid", insertOutput.getInsertedId())
+                )
+            )
             .build();
 
         Update.Output updateOutput = update.run(runContext);
         assertThat(updateOutput.getModifiedCount(), is(1L));
-
 
         update = Update.builder()
             .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
             .database(Property.ofValue(database))
             .collection(Property.ofValue("insert"))
             .document("{\"$set\": { \"tags\": [\"blue\", \"green\", \"red\"]}}")
-            .filter(ImmutableMap.of(
-                "_id", ImmutableMap.of("$oid", insertOutput.getInsertedId())
-            ))
+            .filter(
+                ImmutableMap.of(
+                    "_id", ImmutableMap.of("$oid", insertOutput.getInsertedId())
+                )
+            )
             .build();
 
         updateOutput = update.run(runContext);
         assertThat(updateOutput.getModifiedCount(), is(1L));
 
         Find find = Find.builder()
-            .connection(MongoDbConnection.builder()
-                .uri(Property.ofValue(connectionUri))
-                .build())
+            .connection(
+                MongoDbConnection.builder()
+                    .uri(Property.ofValue(connectionUri))
+                    .build()
+            )
             .database(Property.ofValue(database))
             .collection(Property.ofValue("insert"))
-            .filter(ImmutableMap.of(
-                "_id", ImmutableMap.of("$oid", insertOutput.getInsertedId())
-            ))
+            .filter(
+                ImmutableMap.of(
+                    "_id", ImmutableMap.of("$oid", insertOutput.getInsertedId())
+                )
+            )
             .build();
 
         Find.Output findOutput = find.run(runContext);
@@ -81,14 +94,18 @@ class CrudTest extends MongoDbContainer {
         assertThat(((Map<String, Object>) findOutput.getRows().get(0)).get("_id"), is(insertOutput.getInsertedId()));
 
         Delete delete = Delete.builder()
-            .connection(MongoDbConnection.builder()
-                .uri(Property.ofValue(connectionUri))
-                .build())
+            .connection(
+                MongoDbConnection.builder()
+                    .uri(Property.ofValue(connectionUri))
+                    .build()
+            )
             .database(Property.ofValue(database))
             .collection(Property.ofValue("insert"))
-            .filter(ImmutableMap.of(
-                "_id", ImmutableMap.of("$oid", insertOutput.getInsertedId())
-            ))
+            .filter(
+                ImmutableMap.of(
+                    "_id", ImmutableMap.of("$oid", insertOutput.getInsertedId())
+                )
+            )
             .build();
 
         Delete.Output deleteOutput = delete.run(runContext);

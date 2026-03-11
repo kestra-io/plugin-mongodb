@@ -1,8 +1,13 @@
 package io.kestra.plugin.mongodb;
 
+import org.bson.BsonDocument;
+import org.bson.conversions.Bson;
+import org.slf4j.Logger;
+
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.result.DeleteResult;
+
 import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Metric;
 import io.kestra.core.models.annotations.Plugin;
@@ -11,14 +16,11 @@ import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.RunnableTask;
 import io.kestra.core.runners.RunContext;
+
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
-import org.bson.BsonDocument;
-import org.bson.conversions.Bson;
-import org.slf4j.Logger;
-
-import jakarta.validation.constraints.NotNull;
 
 @SuperBuilder
 @ToString
@@ -94,11 +96,13 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
 
             logger.debug("Delete doc with filter: {}", bsonFilter);
 
-            runContext.metric(Counter.of(
-                "deleted.count", deleteResult.getDeletedCount(),
-                "database", collection.getNamespace().getDatabaseName(),
-                "collection", collection.getNamespace().getCollectionName()
-            ));
+            runContext.metric(
+                Counter.of(
+                    "deleted.count", deleteResult.getDeletedCount(),
+                    "database", collection.getNamespace().getDatabaseName(),
+                    "collection", collection.getNamespace().getCollectionName()
+                )
+            );
 
             return Output.builder()
                 .wasAcknowledged(deleteResult.wasAcknowledged())

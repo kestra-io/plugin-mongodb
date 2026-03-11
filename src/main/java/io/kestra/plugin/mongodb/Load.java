@@ -1,27 +1,29 @@
 package io.kestra.plugin.mongodb;
 
+import java.io.BufferedReader;
+import java.util.Map;
+
+import org.bson.BsonDocument;
+import org.bson.BsonObjectId;
+import org.bson.conversions.Bson;
+import org.bson.types.ObjectId;
+
 import com.mongodb.client.model.InsertOneModel;
 import com.mongodb.client.model.WriteModel;
+
 import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Metric;
 import io.kestra.core.models.annotations.Plugin;
-import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.FileSerde;
 import io.kestra.core.serializers.JacksonMapper;
+
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
-import org.bson.BsonDocument;
-import org.bson.BsonObjectId;
-import org.bson.conversions.Bson;
-import org.bson.types.ObjectId;
 import reactor.core.publisher.Flux;
-
-import java.io.BufferedReader;
-import java.util.Map;
 
 import static io.kestra.core.utils.Rethrow.throwFunction;
 
@@ -90,7 +92,8 @@ public class Load extends AbstractLoad {
     @Override
     protected Flux<WriteModel<Bson>> source(RunContext runContext, BufferedReader inputStream) throws Exception {
         return FileSerde.readAll(inputStream)
-            .map(throwFunction(o -> {
+            .map(throwFunction(o ->
+            {
                 Map<String, Object> values = (Map<String, Object>) o;
 
                 if (runContext.render(this.idKey).as(String.class).isPresent()) {

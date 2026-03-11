@@ -1,8 +1,15 @@
 package io.kestra.plugin.mongodb;
 
+import java.util.Objects;
+
+import org.bson.BsonDocument;
+import org.bson.conversions.Bson;
+import org.slf4j.Logger;
+
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.result.InsertOneResult;
+
 import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Metric;
 import io.kestra.core.models.annotations.Plugin;
@@ -10,15 +17,11 @@ import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.models.tasks.RunnableTask;
 import io.kestra.core.runners.RunContext;
+
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
-import org.bson.BsonDocument;
-import org.bson.conversions.Bson;
-import org.slf4j.Logger;
-
-import java.util.Objects;
-import jakarta.validation.constraints.NotNull;
 
 @SuperBuilder
 @ToString
@@ -37,7 +40,7 @@ import jakarta.validation.constraints.NotNull;
             code = """
                 id: mongodb_insertone
                 namespace: company.team
-                
+
                 tasks:
                   - id: insertone
                     type: io.kestra.plugin.mongodb.InsertOne
@@ -49,7 +52,7 @@ import jakarta.validation.constraints.NotNull;
                       _id:
                         $oid: 60930c39a982931c20ef6cd6
                       name: "John Doe"
-                      city: "Paris"   
+                      city: "Paris"
                 """
         ),
         @Example(
@@ -58,7 +61,7 @@ import jakarta.validation.constraints.NotNull;
             code = """
                 id: mongodb_insertone
                 namespace: company.team
-                
+
                 tasks:
                   - id: insertone
                     type: io.kestra.plugin.mongodb.InsertOne
@@ -100,11 +103,13 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
 
             logger.info("Insert doc: {}", bsonDocument);
 
-            runContext.metric(Counter.of(
-                "inserted.count", 1,
-                "database", collection.getNamespace().getDatabaseName(),
-                "collection", collection.getNamespace().getCollectionName()
-            ));
+            runContext.metric(
+                Counter.of(
+                    "inserted.count", 1,
+                    "database", collection.getNamespace().getDatabaseName(),
+                    "collection", collection.getNamespace().getCollectionName()
+                )
+            );
 
             return Output.builder()
                 .insertedId(Objects.requireNonNull(insertOneResult.getInsertedId()).asObjectId().getValue().toString())

@@ -1,12 +1,15 @@
 package io.kestra.plugin.mongodb;
 
-import com.mongodb.client.MongoClient;
-import com.mongodb.client.MongoClients;
-import io.kestra.core.junit.annotations.KestraTest;
-import io.kestra.core.runners.RunContextFactory;
-import jakarta.inject.Inject;
 import org.testcontainers.containers.MongoDBContainer;
 import org.testcontainers.utility.DockerImageName;
+
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoClients;
+
+import io.kestra.core.junit.annotations.KestraTest;
+import io.kestra.core.runners.RunContextFactory;
+
+import jakarta.inject.Inject;
 
 @KestraTest
 public class MongoDbContainer {
@@ -25,7 +28,8 @@ public class MongoDbContainer {
     }
 
     static {
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+        Runtime.getRuntime().addShutdownHook(new Thread(() ->
+        {
             if (mongoDBContainer != null) {
                 mongoDBContainer.stop();
             }

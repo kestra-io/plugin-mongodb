@@ -1,20 +1,22 @@
 package io.kestra.plugin.mongodb;
 
-import com.mongodb.client.MongoClient;
-import com.mongodb.client.MongoClients;
-import com.mongodb.client.MongoCollection;
-import com.mongodb.client.MongoDatabase;
-import io.kestra.core.junit.annotations.ExecuteFlow;
-import io.kestra.core.junit.annotations.KestraTest;
-import io.kestra.core.models.executions.Execution;
-import io.kestra.core.models.flows.State;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.List;
+
 import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.Arrays;
-import java.util.Date;
-import java.util.List;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoClients;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
+
+import io.kestra.core.junit.annotations.ExecuteFlow;
+import io.kestra.core.junit.annotations.KestraTest;
+import io.kestra.core.models.executions.Execution;
+import io.kestra.core.models.flows.State;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasSize;
@@ -78,66 +80,72 @@ class RunnerTest extends MongoDbContainer {
             // Users collection
             MongoCollection<Document> users = analyticsDb.getCollection("users");
             users.drop();
-            users.insertMany(Arrays.asList(
-                new Document("_id", 1)
-                    .append("name", "John Doe")
-                    .append("email", "john@example.com")
-                    .append("registrationDate", new Date()),
-                new Document("_id", 2)
-                    .append("name", "Jane Smith")
-                    .append("email", "jane@example.com")
-                    .append("registrationDate", new Date()),
-                new Document("_id", 3)
-                    .append("name", "Bob Johnson")
-                    .append("email", "bob@example.com")
-                    .append("registrationDate", new Date())
-            ));
+            users.insertMany(
+                Arrays.asList(
+                    new Document("_id", 1)
+                        .append("name", "John Doe")
+                        .append("email", "john@example.com")
+                        .append("registrationDate", new Date()),
+                    new Document("_id", 2)
+                        .append("name", "Jane Smith")
+                        .append("email", "jane@example.com")
+                        .append("registrationDate", new Date()),
+                    new Document("_id", 3)
+                        .append("name", "Bob Johnson")
+                        .append("email", "bob@example.com")
+                        .append("registrationDate", new Date())
+                )
+            );
 
             // Orders collection
             MongoCollection<Document> orders = analyticsDb.getCollection("orders");
             orders.drop();
-            orders.insertMany(Arrays.asList(
-                new Document("orderId", 1)
-                    .append("userId", 1)
-                    .append("amount", 150.00),
-                new Document("orderId", 2)
-                    .append("userId", 1)
-                    .append("amount", 200.00),
-                new Document("orderId", 3)
-                    .append("userId", 2)
-                    .append("amount", 75.00),
-                new Document("orderId", 4)
-                    .append("userId", 1)
-                    .append("amount", 500.00),
-                new Document("orderId", 5)
-                    .append("userId", 2)
-                    .append("amount", 450.00),
-                new Document("orderId", 6)
-                    .append("userId", 3)
-                    .append("amount", 1200.00)
-            ));
+            orders.insertMany(
+                Arrays.asList(
+                    new Document("orderId", 1)
+                        .append("userId", 1)
+                        .append("amount", 150.00),
+                    new Document("orderId", 2)
+                        .append("userId", 1)
+                        .append("amount", 200.00),
+                    new Document("orderId", 3)
+                        .append("userId", 2)
+                        .append("amount", 75.00),
+                    new Document("orderId", 4)
+                        .append("userId", 1)
+                        .append("amount", 500.00),
+                    new Document("orderId", 5)
+                        .append("userId", 2)
+                        .append("amount", 450.00),
+                    new Document("orderId", 6)
+                        .append("userId", 3)
+                        .append("amount", 1200.00)
+                )
+            );
 
             // Reviews collection
             MongoCollection<Document> reviews = analyticsDb.getCollection("reviews");
             reviews.drop();
-            reviews.insertMany(Arrays.asList(
-                new Document("reviewId", 1)
-                    .append("userId", 1)
-                    .append("productId", 101)
-                    .append("rating", 4.5),
-                new Document("reviewId", 2)
-                    .append("userId", 1)
-                    .append("productId", 102)
-                    .append("rating", 5.0),
-                new Document("reviewId", 3)
-                    .append("userId", 2)
-                    .append("productId", 103)
-                    .append("rating", 3.5),
-                new Document("reviewId", 4)
-                    .append("userId", 3)
-                    .append("productId", 101)
-                    .append("rating", 4.0)
-            ));
+            reviews.insertMany(
+                Arrays.asList(
+                    new Document("reviewId", 1)
+                        .append("userId", 1)
+                        .append("productId", 101)
+                        .append("rating", 4.5),
+                    new Document("reviewId", 2)
+                        .append("userId", 1)
+                        .append("productId", 102)
+                        .append("rating", 5.0),
+                    new Document("reviewId", 3)
+                        .append("userId", 2)
+                        .append("productId", 103)
+                        .append("rating", 3.5),
+                    new Document("reviewId", 4)
+                        .append("userId", 3)
+                        .append("productId", 101)
+                        .append("rating", 4.0)
+                )
+            );
 
             // Setup data for reporting_db.sales
             MongoDatabase reportingDb = client.getDatabase("reporting_db");
@@ -149,48 +157,52 @@ class RunnerTest extends MongoDbContainer {
             Date feb2024 = new Date(124, 1, 20); // February 20, 2024
             Date mar2024 = new Date(124, 2, 10); // March 10, 2024
 
-            sales.insertMany(Arrays.asList(
-                new Document("_id", 1)
-                    .append("createdAt", jan2024)
-                    .append("amount", 1500.00)
-                    .append("customerId", 1),
-                new Document("_id", 2)
-                    .append("createdAt", jan2024)
-                    .append("amount", 2000.00)
-                    .append("customerId", 2),
-                new Document("_id", 3)
-                    .append("createdAt", feb2024)
-                    .append("amount", 1200.00)
-                    .append("customerId", 1),
-                new Document("_id", 4)
-                    .append("createdAt", feb2024)
-                    .append("amount", 800.00)
-                    .append("customerId", 3),
-                new Document("_id", 5)
-                    .append("createdAt", mar2024)
-                    .append("amount", 3000.00)
-                    .append("customerId", 2),
-                new Document("_id", 6)
-                    .append("createdAt", mar2024)
-                    .append("amount", 1800.00)
-                    .append("customerId", 1)
-            ));
+            sales.insertMany(
+                Arrays.asList(
+                    new Document("_id", 1)
+                        .append("createdAt", jan2024)
+                        .append("amount", 1500.00)
+                        .append("customerId", 1),
+                    new Document("_id", 2)
+                        .append("createdAt", jan2024)
+                        .append("amount", 2000.00)
+                        .append("customerId", 2),
+                    new Document("_id", 3)
+                        .append("createdAt", feb2024)
+                        .append("amount", 1200.00)
+                        .append("customerId", 1),
+                    new Document("_id", 4)
+                        .append("createdAt", feb2024)
+                        .append("amount", 800.00)
+                        .append("customerId", 3),
+                    new Document("_id", 5)
+                        .append("createdAt", mar2024)
+                        .append("amount", 3000.00)
+                        .append("customerId", 2),
+                    new Document("_id", 6)
+                        .append("createdAt", mar2024)
+                        .append("amount", 1800.00)
+                        .append("customerId", 1)
+                )
+            );
 
             // Also setup test_db for the simple aggregation test
             MongoDatabase testDb = client.getDatabase("test_db");
             MongoCollection<Document> testCollection = testDb.getCollection("test_collection");
             testCollection.drop();
-            testCollection.insertMany(Arrays.asList(
-                new Document("_id", 1)
-                    .append("name", "Test Document 1")
-                    .append("value", 100),
-                new Document("_id", 2)
-                    .append("name", "Test Document 2")
-                    .append("value", 200)
-            ));
+            testCollection.insertMany(
+                Arrays.asList(
+                    new Document("_id", 1)
+                        .append("name", "Test Document 1")
+                        .append("value", 100),
+                    new Document("_id", 2)
+                        .append("name", "Test Document 2")
+                        .append("value", 200)
+                )
+            );
         }
     }
-    
+
     /**
      * Test the simple aggregation pipeline flow.
      * This test verifies that the Aggregate task can be properly executed
@@ -202,7 +214,7 @@ class RunnerTest extends MongoDbContainer {
         assertThat(execution.getTaskRunList(), hasSize(1));
         assertThat(execution.getState().getCurrent(), is(State.Type.SUCCESS));
     }
-    
+
     /**
      * Test the comprehensive MongoDB aggregation example flow.
      * This test validates that complex aggregation pipelines with multiple stages,

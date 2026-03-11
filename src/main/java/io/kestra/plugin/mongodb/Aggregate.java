@@ -1,34 +1,37 @@
 package io.kestra.plugin.mongodb;
 
-import com.mongodb.client.AggregateIterable;
-import com.mongodb.client.MongoClient;
-import com.mongodb.client.MongoCollection;
-import io.kestra.core.models.annotations.Example;
-import io.kestra.core.models.annotations.Metric;
-import io.kestra.core.models.annotations.Plugin;
-import io.kestra.core.models.executions.metrics.Counter;
-import java.time.Duration;
-import io.kestra.core.models.property.Property;
-import io.kestra.core.models.tasks.RunnableTask;
-import io.kestra.core.runners.RunContext;
-import io.kestra.core.models.tasks.common.FetchType;
-import io.kestra.core.serializers.FileSerde;
-import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.*;
-import lombok.experimental.SuperBuilder;
-import org.apache.commons.lang3.tuple.Pair;
-import org.bson.BsonDocument;
-import org.bson.conversions.Bson;
-import org.slf4j.Logger;
-import reactor.core.publisher.Flux;
-
-import jakarta.validation.constraints.NotNull;
 import java.io.*;
 import java.net.URI;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
+
+import org.apache.commons.lang3.tuple.Pair;
+import org.bson.BsonDocument;
+import org.bson.conversions.Bson;
+import org.slf4j.Logger;
+
+import com.mongodb.client.AggregateIterable;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
+
+import io.kestra.core.models.annotations.Example;
+import io.kestra.core.models.annotations.Metric;
+import io.kestra.core.models.annotations.Plugin;
+import io.kestra.core.models.executions.metrics.Counter;
+import io.kestra.core.models.property.Property;
+import io.kestra.core.models.tasks.RunnableTask;
+import io.kestra.core.models.tasks.common.FetchType;
+import io.kestra.core.runners.RunContext;
+import io.kestra.core.serializers.FileSerde;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotNull;
+import lombok.*;
+import lombok.experimental.SuperBuilder;
+import reactor.core.publisher.Flux;
 
 import static io.kestra.core.utils.Rethrow.throwConsumer;
 
@@ -49,7 +52,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
             code = """
                 id: mongodb_aggregate
                 namespace: company.team
-                
+
                 tasks:
                   - id: aggregate
                     type: io.kestra.plugin.mongodb.Aggregate
@@ -62,7 +65,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
                           status: "active"
                       - $group:
                           _id: "$category"
-                          total: 
+                          total:
                             $sum: "$amount"
                           count:
                             $sum: 1
@@ -76,7 +79,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
             code = """
                 id: mongodb_complex_aggregate
                 namespace: company.team
-                
+
                 tasks:
                   - id: aggregate_with_lookup
                     type: io.kestra.plugin.mongodb.Aggregate
@@ -215,11 +218,13 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
 
             Output output = outputBuilder.build();
 
-            runContext.metric(Counter.of(
-                "records", output.getSize(),
-                "database", collection.getNamespace().getDatabaseName(),
-                "collection", collection.getNamespace().getCollectionName()
-            ));
+            runContext.metric(
+                Counter.of(
+                    "records", output.getSize(),
+                    "database", collection.getNamespace().getDatabaseName(),
+                    "collection", collection.getNamespace().getCollectionName()
+                )
+            );
 
             return output;
         }
@@ -244,7 +249,8 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
         AtomicLong count = new AtomicLong();
 
         documents
-            .forEach(throwConsumer(bsonDocument -> {
+            .forEach(throwConsumer(bsonDocument ->
+            {
                 count.incrementAndGet();
                 result.add(MongoDbService.map(bsonDocument.toBsonDocument()));
             }));
