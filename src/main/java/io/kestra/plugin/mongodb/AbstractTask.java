@@ -18,6 +18,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.ToString;
 import lombok.experimental.SuperBuilder;
+import io.kestra.core.models.annotations.PluginProperty;
 
 @SuperBuilder
 @ToString
@@ -29,18 +30,21 @@ public abstract class AbstractTask extends Task {
         title = "MongoDB connection properties."
     )
     @NotNull
+    @PluginProperty(group = "main")
     protected MongoDbConnection connection;
 
     @Schema(
         title = "MongoDB database."
     )
     @NotNull
+    @PluginProperty(group = "main")
     protected Property<String> database;
 
     @Schema(
         title = "MongoDB collection."
     )
     @NotNull
+    @PluginProperty(group = "main")
     protected Property<String> collection;
 
     protected MongoCollection<Bson> collection(RunContext runContext, MongoClient client) throws IllegalVariableEvaluationException {

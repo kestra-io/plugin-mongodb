@@ -16,6 +16,7 @@ import io.kestra.core.runners.RunContext;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
+import io.kestra.core.models.annotations.PluginProperty;
 
 @SuperBuilder
 @ToString
@@ -72,6 +73,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         description = "Duration between queries; defaults to PT60S."
     )
     @Builder.Default
+    @PluginProperty(group = "execution")
     private final Duration interval = Duration.ofSeconds(60);
 
     private MongoDbConnection connection;
@@ -79,41 +81,48 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     @Schema(
         title = "Database name"
     )
+    @PluginProperty(group = "connection")
     private Property<String> database;
 
     @Schema(
         title = "Collection name"
     )
+    @PluginProperty(group = "advanced")
     private Property<String> collection;
 
     @Schema(
         title = "Query filter",
         description = "BSON string or map rendered before execution."
     )
+    @PluginProperty(group = "processing")
     private Object filter;
 
     @Schema(
         title = "Projection",
         description = "BSON string or map selecting fields to return."
     )
+    @PluginProperty(group = "advanced")
     private Object projection;
 
     @Schema(
         title = "Sort",
         description = "BSON string or map defining sort order."
     )
+    @PluginProperty(group = "advanced")
     private Object sort;
 
     @Schema(
         title = "Limit",
         description = "Maximum documents returned."
     )
+    @PluginProperty(group = "advanced")
     private Property<Integer> limit;
 
     @Schema(
         title = "Skip",
         description = "Documents to skip before returning results."
     )
+    @PluginProperty(group = "advanced")
     private Property<Integer> skip;
 
     @Schema(
@@ -121,6 +130,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         description = "When true, writes results as Ion to internal storage; otherwise rows are kept in output. Defaults to false."
     )
     @Builder.Default
+    @PluginProperty(group = "advanced")
     private Property<Boolean> store = Property.ofValue(false);
 
     @Override

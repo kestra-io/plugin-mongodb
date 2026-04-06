@@ -87,7 +87,7 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
         title = "Document to insert",
         description = "BSON string or map rendered before execution."
     )
-    @PluginProperty(dynamic = true)
+    @PluginProperty(dynamic = true, group = "main")
     @NotNull
     private Object document;
 

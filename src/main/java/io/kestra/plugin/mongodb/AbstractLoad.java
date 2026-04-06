@@ -40,7 +40,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
         description = "Path in internal storage (kestra://...) containing BSON or JSON documents to stream into MongoDB."
     )
     @NotNull
-    @PluginProperty(internalStorageURI = true)
+    @PluginProperty(internalStorageURI = true, group = "main")
     private Property<String> from;
 
     @Schema(
@@ -48,6 +48,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
         description = "Number of write models sent per bulkWrite call; defaults to 1000."
     )
     @Builder.Default
+    @PluginProperty(group = "execution")
     private Property<Integer> chunk = Property.ofValue(1000);
 
     abstract protected Flux<WriteModel<Bson>> source(RunContext runContext, BufferedReader inputStream) throws Exception;

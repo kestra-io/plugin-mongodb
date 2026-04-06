@@ -34,6 +34,7 @@ import lombok.experimental.SuperBuilder;
 import reactor.core.publisher.Flux;
 
 import static io.kestra.core.utils.Rethrow.throwConsumer;
+import io.kestra.core.models.annotations.PluginProperty;
 
 @SuperBuilder
 @ToString
@@ -133,6 +134,7 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
         description = "Enables server-side temp files when a stage exceeds 100 MB; defaults to true."
     )
     @Builder.Default
+    @PluginProperty(group = "advanced")
     private Property<Boolean> allowDiskUse = Property.ofValue(true);
 
     @Schema(
@@ -140,6 +142,7 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
         description = "Server-side limit for the pipeline; defaults to 60000."
     )
     @Builder.Default
+    @PluginProperty(group = "advanced")
     private Property<Integer> maxTimeMs = Property.ofValue((int) Duration.ofSeconds(60).toMillis());
 
     @Schema(
@@ -147,6 +150,7 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
         description = "Documents returned per batch; defaults to 1000."
     )
     @Builder.Default
+    @PluginProperty(group = "advanced")
     private Property<Integer> batchSize = Property.ofValue(1000);
 
     @Schema(
@@ -154,6 +158,7 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
         description = "Fetch returns rows in output; STORE writes an Ion file to internal storage. Defaults to FETCH."
     )
     @Builder.Default
+    @PluginProperty(group = "destination")
     private Property<FetchType> store = Property.ofValue(FetchType.FETCH);
 
     @Override
