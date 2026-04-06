@@ -67,7 +67,7 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
         title = "Query filter",
         description = "BSON string or map rendered before execution."
     )
-    @PluginProperty(dynamic = true)
+    @PluginProperty(dynamic = true, group = "processing")
     private Object filter;
 
     @Schema(
@@ -76,6 +76,7 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
     )
     @Builder.Default
     @NotNull
+    @PluginProperty(group = "advanced")
     private Property<Operation> operation = Property.ofValue(Operation.DELETE_ONE);
 
     @Override

@@ -26,6 +26,7 @@ import lombok.experimental.SuperBuilder;
 import reactor.core.publisher.Flux;
 
 import static io.kestra.core.utils.Rethrow.throwFunction;
+import io.kestra.core.models.annotations.PluginProperty;
 
 @SuperBuilder
 @ToString
@@ -79,6 +80,7 @@ public class Load extends AbstractLoad {
         title = "Field used as _id",
         description = "If set, value is converted to ObjectId and stored as _id."
     )
+    @PluginProperty(group = "connection")
     private Property<String> idKey;
 
     @Schema(
@@ -86,6 +88,7 @@ public class Load extends AbstractLoad {
         description = "When true (default), drops the source field after copying it to _id."
     )
     @Builder.Default
+    @PluginProperty(group = "connection")
     private Property<Boolean> removeIdKey = Property.ofValue(true);
 
     @SuppressWarnings("unchecked")

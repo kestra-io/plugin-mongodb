@@ -95,33 +95,35 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         title = "Query filter",
         description = "BSON string or map rendered before execution."
     )
-    @PluginProperty(dynamic = true)
+    @PluginProperty(dynamic = true, group = "processing")
     private Object filter;
 
     @Schema(
         title = "Projection",
         description = "BSON string or map selecting fields to return."
     )
-    @PluginProperty(dynamic = true)
+    @PluginProperty(dynamic = true, group = "connection")
     private Object projection;
 
     @Schema(
         title = "Sort",
         description = "BSON string or map defining sort order."
     )
-    @PluginProperty(dynamic = true)
+    @PluginProperty(dynamic = true, group = "processing")
     private Object sort;
 
     @Schema(
         title = "Limit",
         description = "Maximum documents returned."
     )
+    @PluginProperty(group = "processing")
     private Property<Integer> limit;
 
     @Schema(
         title = "Skip",
         description = "Documents to skip before returning results."
     )
+    @PluginProperty(group = "advanced")
     private Property<Integer> skip;
 
     @Schema(
@@ -129,6 +131,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         description = "When true, writes results as Ion to internal storage; otherwise returns rows. Defaults to false."
     )
     @Builder.Default
+    @PluginProperty(group = "destination")
     private Property<Boolean> store = Property.ofValue(false);
 
     @Override

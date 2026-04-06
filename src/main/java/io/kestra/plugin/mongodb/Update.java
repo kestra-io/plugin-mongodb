@@ -94,7 +94,7 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
         title = "Update payload or replacement document",
         description = "BSON string or map rendered before execution."
     )
-    @PluginProperty(dynamic = true)
+    @PluginProperty(dynamic = true, group = "main")
     @NotNull
     private Object document;
 
@@ -102,7 +102,7 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
         title = "Query filter",
         description = "BSON string or map rendered before execution; selects documents to update."
     )
-    @PluginProperty(dynamic = true)
+    @PluginProperty(dynamic = true, group = "main")
     @NotNull
     private Object filter;
 
@@ -111,6 +111,7 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
         description = "One of UPDATE_ONE (default), UPDATE_MANY, or REPLACE_ONE."
     )
     @Builder.Default
+    @PluginProperty(group = "advanced")
     private Property<Operation> operation = Property.ofValue(Operation.UPDATE_ONE);
 
     @Override
