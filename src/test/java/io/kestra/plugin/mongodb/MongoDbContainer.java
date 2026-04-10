@@ -25,6 +25,7 @@ public class MongoDbContainer {
 
         // Set system property for the connection URI that the flows can use
         System.setProperty("mongodb.uri", connectionUri);
+        System.setProperty("ENV_MONGODB_URI", connectionUri);
     }
 
     static {
@@ -34,6 +35,7 @@ public class MongoDbContainer {
                 mongoDBContainer.stop();
             }
             System.clearProperty("mongodb.uri");
+            System.clearProperty("ENV_MONGODB_URI");
         }));
     }
 
