@@ -1,13 +1,11 @@
 package io.kestra.plugin.mongodb;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import io.kestra.core.junit.annotations.EvaluateTrigger;
 import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,19 +25,13 @@ import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import reactor.core.publisher.Flux;
 
+import javax.swing.text.html.Option;
+
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
 @KestraTest(startRunner = true, startScheduler = true)
 public class TriggerTest extends MongoDbContainer {
-
-    @Inject
-    @Named(QueueFactoryInterface.EXECUTION_NAMED)
-    private QueueInterface<Execution> executionQueue;
-
-    @Inject
-    private LocalFlowRepositoryLoader localFlowRepositoryLoader;
-
     @BeforeEach
     void setUp() {
         // Set up test data for samples.books collection
@@ -88,8 +80,10 @@ public class TriggerTest extends MongoDbContainer {
     }
 
     @Test
-    void run() throws Exception {
-        Execution execution = triggerFlow();
+    @EvaluateTrigger(flow = "flows/mongo-listen.yml", triggerId = "watch")
+    void run(Optional<Execution> optionalExecution) {
+        assertThat(optionalExecution.isPresent(), is(true));
+        Execution execution = optionalExecution.get();
 
         var rows = (List<Map<String, Object>>) execution.getTrigger().getVariables().get("rows");
 
@@ -101,26 +95,5 @@ public class TriggerTest extends MongoDbContainer {
         assertThat(rows.getFirst().get("title"), is("Essential Guide to Peoplesoft Development and Customization"));
 
         assertThat(rows.get(1).get("_id"), is(315));
-    }
-
-    protected Execution triggerFlow() throws Exception {
-        CountDownLatch queueCount = new CountDownLatch(1);
-        Flux<Execution> receive = TestsUtils.receive(executionQueue, execution -> {
-            queueCount.countDown();
-            assertThat(execution.getLeft().getFlowId(), is("mongo-listen"));
-        });
-
-        localFlowRepositoryLoader.load(
-            Objects.requireNonNull(
-                this.getClass()
-                    .getClassLoader()
-                    .getResource("flows/mongo-listen.yml")
-            )
-        );
-
-        boolean await = queueCount.await(1, TimeUnit.MINUTES);
-        assertThat(await, is(true));
-
-        return receive.blockLast();
     }
 }
