@@ -4,6 +4,7 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
+import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
 
@@ -24,6 +25,7 @@ public class MongoDbConnection {
             "like `mongodb://mongodb0.example.com:27017`"
     )
     @NotNull
+    @PluginProperty(secret = true)
     private Property<@NotEmpty String> uri;
 
     MongoClient client(RunContext runContext) throws IllegalVariableEvaluationException {
