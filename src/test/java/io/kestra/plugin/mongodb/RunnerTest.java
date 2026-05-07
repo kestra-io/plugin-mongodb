@@ -29,7 +29,6 @@ import static org.hamcrest.Matchers.is;
  */
 @KestraTest(startRunner = true)
 class RunnerTest extends MongoDbContainer {
-
     @BeforeEach
     void setupTestData() {
         try (MongoClient client = MongoClients.create(connectionUri)) {
@@ -219,7 +218,7 @@ class RunnerTest extends MongoDbContainer {
      * Test the comprehensive MongoDB aggregation example flow.
      * This test validates that complex aggregation pipelines with multiple stages,
      * lookups, transformations, and various configuration options can be executed.
-     * 
+     *
      * The flow includes:
      * - Simple grouping and sorting operations
      * - Complex lookups with multiple collections
