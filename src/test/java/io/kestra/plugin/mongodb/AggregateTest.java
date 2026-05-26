@@ -1,7 +1,6 @@
 package io.kestra.plugin.mongodb;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
+import java.io.BufferedInputStream;
 import java.util.*;
 import java.util.Map;
 
@@ -19,7 +18,7 @@ import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.common.FetchType;
 import io.kestra.core.runners.RunContext;
-import io.kestra.core.serializers.JacksonMapper;
+import io.kestra.core.serializers.FileSerde;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
@@ -252,15 +251,8 @@ class AggregateTest extends MongoDbContainer {
         assertThat(output.getSize(), is(2L));
 
         // Verify stored file content
-        try (
-            var inputStream = runContext.storage().getFile(output.getUri());
-            var reader = new BufferedReader(new InputStreamReader(inputStream))
-        ) {
-            List<Object> storedRows = new ArrayList<>();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                storedRows.add(JacksonMapper.ofIon().readValue(line, Object.class));
-            }
+        try (var inputStream = new BufferedInputStream(runContext.storage().getFile(output.getUri()))) {
+            List<Object> storedRows = FileSerde.readAll(inputStream).collectList().block();
             assertThat(storedRows.size(), is(2));
         }
     }
