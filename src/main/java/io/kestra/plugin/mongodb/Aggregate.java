@@ -20,6 +20,7 @@ import com.mongodb.client.MongoCollection;
 import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Metric;
 import io.kestra.core.models.annotations.Plugin;
+import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.RunnableTask;
@@ -34,7 +35,6 @@ import lombok.experimental.SuperBuilder;
 import reactor.core.publisher.Flux;
 
 import static io.kestra.core.utils.Rethrow.throwConsumer;
-import io.kestra.core.models.annotations.PluginProperty;
 
 @SuperBuilder
 @ToString
@@ -238,7 +238,7 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
     private Pair<URI, Long> store(RunContext runContext, AggregateIterable<BsonDocument> documents) throws IOException {
         File tempFile = runContext.workingDir().createTempFile(".ion").toFile();
 
-        try (var output = new BufferedWriter(new FileWriter(tempFile), FileSerde.BUFFER_SIZE)) {
+        try (var output = new BufferedOutputStream(new FileOutputStream(tempFile), FileSerde.BUFFER_SIZE)) {
             var flux = Flux.fromIterable(documents).map(document -> MongoDbService.map(document.toBsonDocument()));
             Long count = FileSerde.writeAll(output, flux).block();
 

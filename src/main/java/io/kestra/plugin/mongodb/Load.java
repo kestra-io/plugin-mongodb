@@ -1,6 +1,6 @@
 package io.kestra.plugin.mongodb;
 
-import java.io.BufferedReader;
+import java.io.InputStream;
 import java.util.Map;
 
 import org.bson.BsonDocument;
@@ -14,6 +14,7 @@ import com.mongodb.client.model.WriteModel;
 import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Metric;
 import io.kestra.core.models.annotations.Plugin;
+import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
@@ -26,7 +27,6 @@ import lombok.experimental.SuperBuilder;
 import reactor.core.publisher.Flux;
 
 import static io.kestra.core.utils.Rethrow.throwFunction;
-import io.kestra.core.models.annotations.PluginProperty;
 
 @SuperBuilder
 @ToString
@@ -93,7 +93,7 @@ public class Load extends AbstractLoad {
 
     @SuppressWarnings("unchecked")
     @Override
-    protected Flux<WriteModel<Bson>> source(RunContext runContext, BufferedReader inputStream) throws Exception {
+    protected Flux<WriteModel<Bson>> source(RunContext runContext, InputStream inputStream) throws Exception {
         return FileSerde.readAll(inputStream)
             .map(throwFunction(o ->
             {

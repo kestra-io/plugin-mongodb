@@ -196,7 +196,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
     private Pair<URI, Long> store(RunContext runContext, FindIterable<BsonDocument> documents) throws IOException {
         File tempFile = runContext.workingDir().createTempFile(".ion").toFile();
 
-        try (var output = new BufferedWriter(new FileWriter(tempFile), FileSerde.BUFFER_SIZE)) {
+        try (var output = new BufferedOutputStream(new FileOutputStream(tempFile), FileSerde.BUFFER_SIZE)) {
             var flux = Flux.fromIterable(documents).map(document -> MongoDbService.map(document.toBsonDocument()));
             Long count = FileSerde.writeAll(output, flux).block();
 
