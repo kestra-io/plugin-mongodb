@@ -2,6 +2,8 @@ package io.kestra.plugin.mongodb;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -82,9 +84,9 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 )
 public class Bulk extends AbstractLoad {
     @Override
-    protected Flux<WriteModel<Bson>> source(RunContext runContext, BufferedReader inputStream) throws IOException {
+    protected Flux<WriteModel<Bson>> source(RunContext runContext, InputStream inputStream) throws IOException {
         return Flux
-            .create(this.ndJSonReader(inputStream), FluxSink.OverflowStrategy.BUFFER);
+            .create(this.ndJSonReader(new BufferedReader(new InputStreamReader(inputStream))), FluxSink.OverflowStrategy.BUFFER);
     }
 
     public Consumer<FluxSink<WriteModel<Bson>>> ndJSonReader(BufferedReader input) throws IOException {
