@@ -69,7 +69,7 @@ import lombok.experimental.SuperBuilder;
                       uri: "mongodb://root:example@localhost:27017/?authSource=admin"
                     database: "my_database"
                     collection: "my_collection"
-                    document: "{{ outputs.task_id.data | json }}"
+                    document: "{{ outputs.task_id.data | toJson }}"
                 """
         ),
     },
