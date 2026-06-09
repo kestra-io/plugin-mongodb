@@ -111,9 +111,8 @@ public class Load extends AbstractLoad {
                     }
                 }
 
-                // Wrap the in-memory Map directly instead of serializing it to a
-                // JSON string and parsing it back. Document is a Map and a Bson, so
-                // the driver encodes it natively. See issue #91.
+                // we wrap the in-memory Map directly instead of serializing it to a
+                // JSON string and parsing it back.
                 return new InsertOneModel<>(new Document(values));
             }));
     }
