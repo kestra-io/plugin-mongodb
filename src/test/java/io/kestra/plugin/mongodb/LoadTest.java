@@ -104,8 +104,6 @@ class LoadTest extends MongoDbContainer {
 
         assertThat(runOutput.getInsertedCount(), is(1));
 
-        // The id field must have become the document _id as a real ObjectId,
-        // and the source field must have been removed (removeIdKey defaults to true).
         try (MongoClient client = getMongoClient()) {
             Document stored = client.getDatabase(database)
                 .getCollection("load_idkey", Document.class)
