@@ -27,21 +27,21 @@ import io.kestra.core.models.annotations.PluginProperty;
 @NoArgsConstructor
 public abstract class AbstractTask extends Task {
     @Schema(
-        title = "MongoDB connection properties."
+        title = "MongoDB connection properties"
     )
     @NotNull
     @PluginProperty(group = "main")
     protected MongoDbConnection connection;
 
     @Schema(
-        title = "MongoDB database."
+        title = "MongoDB database"
     )
     @NotNull
     @PluginProperty(group = "main")
     protected Property<String> database;
 
     @Schema(
-        title = "MongoDB collection."
+        title = "MongoDB collection"
     )
     @NotNull
     @PluginProperty(group = "main")
