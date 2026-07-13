@@ -3,8 +3,8 @@ package io.kestra.plugin.mongodb;
 import java.io.InputStream;
 import java.util.Map;
 
-import org.bson.BsonDocument;
 import org.bson.BsonObjectId;
+import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 
@@ -19,7 +19,6 @@ import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.FileSerde;
-import io.kestra.core.serializers.JacksonMapper;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
@@ -112,9 +111,9 @@ public class Load extends AbstractLoad {
                     }
                 }
 
-                return new InsertOneModel<>(
-                    BsonDocument.parse(JacksonMapper.ofJson().writeValueAsString(values))
-                );
+                // we wrap the in-memory Map directly instead of serializing it to a
+                // JSON string and parsing it back.
+                return new InsertOneModel<>(new Document(values));
             }));
     }
 }

@@ -76,6 +76,10 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     @PluginProperty(group = "execution")
     private final Duration interval = Duration.ofSeconds(60);
 
+    @Schema(
+        title = "MongoDB connection"
+    )
+    @PluginProperty(group = "connection")
     private MongoDbConnection connection;
 
     @Schema(
