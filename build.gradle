@@ -55,7 +55,7 @@ dependencies {
     annotationProcessor group: "io.kestra", name: "processor", version: kestraVersion
     compileOnly group: "io.kestra", name: "core", version: kestraVersion
 
-    api 'org.mongodb:mongodb-driver-sync:5.9.1'
+    api 'org.mongodb:mongodb-driver-sync:5.9.2'
 }
 
 
