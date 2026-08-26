@@ -24,8 +24,10 @@ import io.kestra.core.models.annotations.PluginProperty;
 @Getter
 @NoArgsConstructor
 @Schema(
-    title = "Poll MongoDB and trigger on results",
-    description = "Periodically runs a MongoDB find; if results are non-empty, starts a Flow with the rows or stored file. Uses Find task behavior (filter/projection/sort/limit/skip). Default interval is 60s and store is false, returning rows in trigger output."
+    title = "MongoDB Trigger",
+    description = """
+        Periodically runs a MongoDB find query and starts a Flow when results are non-empty, passing the matched rows or a stored file to the execution. Uses the same filter, projection, sort, limit and skip semantics as the Find task. Defaults to a 60-second polling interval, returning matched rows in the trigger output unless `store` is enabled.
+        """
 )
 @Plugin(
     examples = {
