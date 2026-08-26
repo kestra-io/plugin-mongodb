@@ -1,6 +1,6 @@
 # How to use the MongoDB plugin
 
-Connect to any MongoDB deployment — local, Atlas, or replica set — to query, write, and trigger flows from collection changes.
+Connect to any MongoDB deployment — local, Atlas, or replica set — to query, write, and trigger flows by polling a collection for new or matching documents.
 
 ## Authentication
 
@@ -14,4 +14,4 @@ Set `database` and `collection` on each task, or apply them globally with [plugi
 
 `Find` retrieves documents matching a filter and returns them as Kestra internal storage for downstream tasks. `Aggregate` runs a pipeline and is the right choice for grouped, transformed, or multi-stage queries. `InsertOne` adds a single document; `Bulk` handles batched write operations (inserts, updates, deletes) in a single request — use `Bulk` when writing multiple documents to avoid per-document round trips. `Update` modifies matching documents and `Delete` removes them. `Load` writes records from a Kestra internal storage file into a collection — use it after a download or transform step to ingest structured data.
 
-`Trigger` polls a collection on a schedule and starts one execution per batch of new documents matching a filter. Use it to drive downstream processing whenever new data arrives in MongoDB.
+`Trigger` polls a collection on a schedule and starts one execution per batch of new documents matching a filter. Use it to drive downstream processing whenever new data arrives in MongoDB. This is a polling `find`-based trigger, not a change-data-capture (CDC) mechanism — for CDC on the MongoDB oplog, use the Debezium MongoDB plugin instead.
