@@ -27,6 +27,8 @@ import io.kestra.core.models.annotations.PluginProperty;
     title = "MongoDB Trigger",
     description = """
         Periodically runs a MongoDB find query and starts a Flow when results are non-empty, passing the matched rows or a stored file to the execution. Uses the same filter, projection, sort, limit and skip semantics as the Find task. Defaults to a 60-second polling interval, returning matched rows in the trigger output unless `store` is enabled.
+
+        This trigger polls MongoDB with a `find` query on each interval; it is not a change-data-capture (CDC) trigger and does not read the MongoDB oplog or change streams. For CDC-style capture of MongoDB changes, use the Debezium MongoDB plugin instead.
         """
 )
 @Plugin(
