@@ -8,7 +8,7 @@ Set the `uri` property to a MongoDB connection string (e.g., `mongodb://user:pas
 
 ## Common properties
 
-Set `database` and `collection` on each task, or apply them globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults) if all tasks in a flow target the same collection.
+Set `database` and `collection` on each task.
 
 ## Tasks
 
