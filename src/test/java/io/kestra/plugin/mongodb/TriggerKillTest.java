@@ -8,6 +8,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 
 import org.bson.BsonDocument;
 import org.junit.jupiter.api.Test;
@@ -76,7 +77,8 @@ class TriggerKillTest {
 
         trigger.kill();
 
-        assertThat(closed.get(), is(true));
+        // closing happens on a background thread, wait for it without assuming timing
+        assertThat(awaitTrue(closed::get), is(true));
 
         // late / repeated kills stay safe
         trigger.kill();
@@ -116,6 +118,88 @@ class TriggerKillTest {
     }
 
     @Test
+    void killDoesNotBlockWhenCursorCloseHangs() throws Exception {
+        Trigger trigger = Trigger.builder().id("watch").build();
+        HangingCloseCursor cursor = new HangingCloseCursor();
+        setField(trigger, "cursor", cursor);
+
+        AtomicReference<Throwable> killError = new AtomicReference<>();
+        CountDownLatch killDone = new CountDownLatch(1);
+        Thread killer = new Thread(() ->
+        {
+            try {
+                trigger.kill();
+            } catch (Throwable t) {
+                killError.set(t);
+            } finally {
+                killDone.countDown();
+            }
+        });
+        killer.setDaemon(true);
+        killer.start();
+
+        try {
+            assertThat("kill() must return without waiting for close()", killDone.await(10, TimeUnit.SECONDS), is(true));
+            assertThat(killError.get(), nullValue());
+            assertThat("close must still be attempted in the background", cursor.closeEntered.await(10, TimeUnit.SECONDS), is(true));
+        } finally {
+            cursor.release.countDown();
+        }
+    }
+
+    @Test
+    void killDoesNotBlockWhenClientCloseHangs() throws Exception {
+        Trigger trigger = Trigger.builder().id("watch").build();
+        CountDownLatch closeEntered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        MongoClient hangingClient = (MongoClient) Proxy.newProxyInstance(
+            getClass().getClassLoader(),
+            new Class<?>[] { MongoClient.class },
+            (proxy, method, args) ->
+            {
+                switch (method.getName()) {
+                    case "close":
+                        closeEntered.countDown();
+                        release.await();
+                        return null;
+                    case "toString":
+                        return "hangingMongoClient";
+                    case "hashCode":
+                        return System.identityHashCode(proxy);
+                    case "equals":
+                        return proxy == args[0];
+                    default:
+                        throw new UnsupportedOperationException(method.getName());
+                }
+            }
+        );
+        setField(trigger, "client", hangingClient);
+
+        AtomicReference<Throwable> killError = new AtomicReference<>();
+        CountDownLatch killDone = new CountDownLatch(1);
+        Thread killer = new Thread(() ->
+        {
+            try {
+                trigger.kill();
+            } catch (Throwable t) {
+                killError.set(t);
+            } finally {
+                killDone.countDown();
+            }
+        });
+        killer.setDaemon(true);
+        killer.start();
+
+        try {
+            assertThat("kill() must return without waiting for close()", killDone.await(10, TimeUnit.SECONDS), is(true));
+            assertThat(killError.get(), nullValue());
+            assertThat("close must still be attempted in the background", closeEntered.await(10, TimeUnit.SECONDS), is(true));
+        } finally {
+            release.countDown();
+        }
+    }
+
+    @Test
     void inFlightStateIsExcludedFromToString() throws Exception {
         Trigger trigger = Trigger.builder().id("watch").build();
         setField(trigger, "cursor", new BlockingCursor());
@@ -136,11 +220,26 @@ class TriggerKillTest {
         return field.get(target);
     }
 
+    private static boolean awaitTrue(BooleanSupplier condition) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline) {
+            if (condition.getAsBoolean()) {
+                return true;
+            }
+            Thread.sleep(10);
+        }
+        return condition.getAsBoolean();
+    }
+
     /**
      * Fake cursor blocked in {@link #hasNext()} until {@link #close()} is called,
      * mirroring a driver cursor stuck in a server round-trip.
+     *
+     * <p>
+     * Closing the cursor only requests cancellation; like the driver, it does not
+     * claim to interrupt a genuinely wedged network read.
      */
-    private static final class BlockingCursor implements MongoCursor<BsonDocument> {
+    private static final class BlockingCursor extends StubCursor {
         final AtomicInteger closeCalls = new AtomicInteger();
         final AtomicBoolean closed = new AtomicBoolean();
         final CountDownLatch enteredHasNext = new CountDownLatch(1);
@@ -164,7 +263,34 @@ class TriggerKillTest {
             }
             throw new IllegalStateException("cursor closed");
         }
+    }
 
+    /**
+     * Fake cursor whose {@link #close()} blocks until released, proving that
+     * {@link Trigger#kill()} dispatches closing to the background instead of
+     * waiting for a synchronous teardown round trip.
+     */
+    private static final class HangingCloseCursor extends StubCursor {
+        final CountDownLatch closeEntered = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+
+        @Override
+        public void close() {
+            closeEntered.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        @Override
+        public boolean hasNext() {
+            throw new IllegalStateException("no data");
+        }
+    }
+
+    private static abstract class StubCursor implements MongoCursor<BsonDocument> {
         @Override
         public BsonDocument next() {
             throw new NoSuchElementException("no elements");

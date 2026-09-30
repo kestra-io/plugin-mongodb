@@ -5,6 +5,7 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 
 import org.apache.commons.lang3.tuple.Pair;
 import org.bson.BsonDocument;
@@ -13,6 +14,7 @@ import org.slf4j.Logger;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoCursor;
 
 import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Metric;
@@ -28,8 +30,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 import reactor.core.publisher.Flux;
-
-import static io.kestra.core.utils.Rethrow.throwConsumer;
 
 @SuperBuilder
 @ToString
@@ -136,68 +136,88 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
 
     @Override
     public Find.Output run(RunContext runContext) throws Exception {
-        Logger logger = runContext.logger();
-
         try (MongoClient client = this.connection.client(runContext)) {
-            MongoCollection<BsonDocument> collection = this.collection(runContext, client, BsonDocument.class);
-
-            BsonDocument bsonFilter = MongoDbService.toDocument(runContext, this.filter);
-            logger.debug("Find: {}", bsonFilter);
-
-            FindIterable<BsonDocument> find = collection.find(bsonFilter);
-
-            if (this.projection != null) {
-                find.projection(MongoDbService.toDocument(runContext, this.projection));
-            }
-
-            if (this.sort != null) {
-                find.sort(MongoDbService.toDocument(runContext, this.sort));
-            }
-
-            if (runContext.render(this.limit).as(Integer.class).isPresent()) {
-                find.limit(runContext.render(this.limit).as(Integer.class).get());
-            }
-
-            if (runContext.render(this.skip).as(Integer.class).isPresent()) {
-                find.skip(runContext.render(this.skip).as(Integer.class).get());
-            }
-
-            Output.OutputBuilder builder = Output.builder();
-
-            if (runContext.render(this.store).as(Boolean.class).orElseThrow()) {
-                Pair<URI, Long> store = this.store(runContext, find);
-
-                builder
-                    .uri(store.getLeft())
-                    .size(store.getRight());
-            } else {
-                Pair<ArrayList<Object>, Long> fetch = this.fetch(find);
-
-                builder
-                    .rows(fetch.getLeft())
-                    .size(fetch.getRight());
-            }
-
-            Output output = builder
-                .build();
-
-            runContext.metric(
-                Counter.of(
-                    "records", output.getSize(),
-                    "database", collection.getNamespace().getDatabaseName(),
-                    "collection", collection.getNamespace().getCollectionName()
-                )
-            );
-
-            return output;
+            return run(runContext, client, mongoCursor ->
+            {
+            });
         }
     }
 
-    private Pair<URI, Long> store(RunContext runContext, FindIterable<BsonDocument> documents) throws IOException {
+    /**
+     * Runs the find with a caller-provided client, publishing the active query cursor to {@code cursorListener}.
+     *
+     * <p>
+     * This allows a polling trigger to retain the in-flight cursor for {@code kill()} without duplicating
+     * the query logic. Publishing the cursor is best-effort cancellation support: closing it asks the driver
+     * to cancel a blocked cursor operation, but it is not guaranteed to interrupt a genuinely wedged
+     * server or network read.
+     */
+    Output run(RunContext runContext, MongoClient client, Consumer<MongoCursor<BsonDocument>> cursorListener) throws Exception {
+        Logger logger = runContext.logger();
+
+        MongoCollection<BsonDocument> collection = this.collection(runContext, client, BsonDocument.class);
+
+        BsonDocument bsonFilter = MongoDbService.toDocument(runContext, this.filter);
+        logger.debug("Find: {}", bsonFilter);
+
+        FindIterable<BsonDocument> find = collection.find(bsonFilter);
+
+        if (this.projection != null) {
+            find.projection(MongoDbService.toDocument(runContext, this.projection));
+        }
+
+        if (this.sort != null) {
+            find.sort(MongoDbService.toDocument(runContext, this.sort));
+        }
+
+        if (runContext.render(this.limit).as(Integer.class).isPresent()) {
+            find.limit(runContext.render(this.limit).as(Integer.class).get());
+        }
+
+        if (runContext.render(this.skip).as(Integer.class).isPresent()) {
+            find.skip(runContext.render(this.skip).as(Integer.class).get());
+        }
+
+        Output.OutputBuilder builder = Output.builder();
+
+        if (runContext.render(this.store).as(Boolean.class).orElseThrow()) {
+            Pair<URI, Long> store = this.store(runContext, find, cursorListener);
+
+            builder
+                .uri(store.getLeft())
+                .size(store.getRight());
+        } else {
+            Pair<ArrayList<Object>, Long> fetch = this.fetch(find, cursorListener);
+
+            builder
+                .rows(fetch.getLeft())
+                .size(fetch.getRight());
+        }
+
+        Output output = builder
+            .build();
+
+        runContext.metric(
+            Counter.of(
+                "records", output.getSize(),
+                "database", collection.getNamespace().getDatabaseName(),
+                "collection", collection.getNamespace().getCollectionName()
+            )
+        );
+
+        return output;
+    }
+
+    private Pair<URI, Long> store(RunContext runContext, FindIterable<BsonDocument> documents, Consumer<MongoCursor<BsonDocument>> cursorListener) throws IOException {
         File tempFile = runContext.workingDir().createTempFile(".ion").toFile();
 
-        try (var output = new BufferedOutputStream(new FileOutputStream(tempFile), FileSerde.BUFFER_SIZE)) {
-            var flux = Flux.fromIterable(documents).map(document -> MongoDbService.map(document.toBsonDocument()));
+        try (
+            var output = new BufferedOutputStream(new FileOutputStream(tempFile), FileSerde.BUFFER_SIZE);
+            MongoCursor<BsonDocument> mongoCursor = documents.cursor()
+        ) {
+            cursorListener.accept(mongoCursor);
+            var flux = Flux.fromIterable((Iterable<BsonDocument>) () -> mongoCursor)
+                .map(document -> MongoDbService.map(document.toBsonDocument()));
             Long count = FileSerde.writeAll(output, flux).block();
 
             return Pair.of(
@@ -207,16 +227,18 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         }
     }
 
-    private Pair<ArrayList<Object>, Long> fetch(FindIterable<BsonDocument> documents) {
+    private Pair<ArrayList<Object>, Long> fetch(FindIterable<BsonDocument> documents, Consumer<MongoCursor<BsonDocument>> cursorListener) {
         ArrayList<Object> result = new ArrayList<>();
         AtomicLong count = new AtomicLong();
 
-        documents
-            .forEach(throwConsumer(bsonDocument ->
-            {
+        try (MongoCursor<BsonDocument> mongoCursor = documents.cursor()) {
+            cursorListener.accept(mongoCursor);
+            while (mongoCursor.hasNext()) {
+                BsonDocument bsonDocument = mongoCursor.next();
                 count.incrementAndGet();
                 result.add(MongoDbService.map(bsonDocument.toBsonDocument()));
-            }));
+            }
+        }
 
         return Pair.of(
             result,
