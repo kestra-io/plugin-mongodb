@@ -205,6 +205,11 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
      * The closes run on a dedicated daemon thread because closing may itself perform a synchronous
      * teardown round trip while this plugin configures no client-side timeout bound. This method therefore
      * always returns promptly and never throws.
+     *
+     * <p>
+     * Each kill() invocation spawns one daemon thread and there is currently no cap or deduplication:
+     * a genuinely wedged server with no socket timeout may hold that daemon thread indefinitely.
+     * Because the thread is a daemon, it never keeps JVM shutdown alive.
      */
     @Override
     public void kill() {

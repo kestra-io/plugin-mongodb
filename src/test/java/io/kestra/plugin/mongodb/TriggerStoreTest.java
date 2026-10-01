@@ -16,12 +16,12 @@ import static org.hamcrest.Matchers.*;
  * Exercises the polling {@link Trigger} with {@code store=true}.
  *
  * <p>
- * This covers the Trigger-side cursor iteration used by the {@code store} path
- * (explicit {@code MongoCursor} retained for {@link Trigger#kill()}, streamed
- * through {@code FileSerde} into internal storage). It reads the same shared
+ * This covers the {@code store=true} output contract (result URI and size in
+ * internal storage, no in-memory rows). It reads the same shared
  * {@code samples.books} dataset as {@link TriggerTest}, so it needs the same
  * CI infrastructure (MongoDB on {@code localhost:27017} seeded by
- * {@code setup-unit.sh}).
+ * {@code setup-unit.sh}). It is not kill wiring coverage: see
+ * {@link TriggerEvaluateKillTest} for kill-during-fetch behavior.
  */
 @KestraTest(startRunner = true, startScheduler = true)
 public class TriggerStoreTest extends MongoDbContainer {
