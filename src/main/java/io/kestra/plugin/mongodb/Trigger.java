@@ -5,6 +5,7 @@ import java.util.Optional;
 
 import org.bson.BsonDocument;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCursor;
@@ -71,6 +72,7 @@ import lombok.experimental.SuperBuilder;
     }
 )
 public class Trigger extends AbstractTrigger implements PollingTriggerInterface, TriggerOutput<Find.Output> {
+    private static final Logger log = LoggerFactory.getLogger(Trigger.class);
 
     @Schema(
         title = "Polling interval",
@@ -194,10 +196,10 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
      * Best-effort cancellation of an in-flight evaluation, without blocking the calling worker thread.
      *
      * <p>
-     * Closing the cursor asks the driver to cancel a blocked cursor operation and closing the client
-     * releases its resources, but neither is guaranteed to interrupt a genuinely wedged server or network
-     * read: the driver may only mark the cursor close as pending until the read returns, and a connection
-     * currently checked out and blocked may not be reclaimed immediately.
+     * Closing the cursor requests driver teardown of the cursor and closing the client releases its
+     * resources, but neither is guaranteed to interrupt a genuinely wedged server or network read: an
+     * already in-flight getMore() may continue until it returns, with teardown completing afterwards,
+     * and a connection currently checked out and blocked may not be reclaimed immediately.
      *
      * <p>
      * The closes run on a dedicated daemon thread because closing may itself perform a synchronous
@@ -224,7 +226,8 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         if (mongoCursor != null) {
             try {
                 mongoCursor.close();
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                log.debug("Failed to close MongoDB cursor during kill()", e);
                 // closing a cursor is idempotent, never fail kill()
             }
         }
@@ -232,7 +235,8 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         if (mongoClient != null) {
             try {
                 mongoClient.close();
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                log.debug("Failed to close MongoDB client during kill()", e);
                 // closing a client is idempotent, never fail kill()
             }
         }

@@ -87,7 +87,7 @@ class TriggerKillTest {
     }
 
     @Test
-    void killUnblocksCursorAndIsIdempotent() throws Exception {
+    void killClosesCursorAndIsIdempotent() throws Exception {
         Trigger trigger = Trigger.builder().id("watch").build();
         BlockingCursor cursor = new BlockingCursor();
         setField(trigger, "cursor", cursor);

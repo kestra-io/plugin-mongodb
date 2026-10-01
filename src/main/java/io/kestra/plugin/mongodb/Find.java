@@ -148,9 +148,9 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
      *
      * <p>
      * This allows a polling trigger to retain the in-flight cursor for {@code kill()} without duplicating
-     * the query logic. Publishing the cursor is best-effort cancellation support: closing it asks the driver
-     * to cancel a blocked cursor operation, but it is not guaranteed to interrupt a genuinely wedged
-     * server or network read.
+     * the query logic. Publishing the cursor enables best-effort cleanup: closing it requests driver
+     * teardown of the cursor, but an already in-flight getMore()/network read may continue until it returns;
+     * this does not guarantee interruption of a genuinely wedged server or network read.
      */
     Output run(RunContext runContext, MongoClient client, Consumer<MongoCursor<BsonDocument>> cursorListener) throws Exception {
         Logger logger = runContext.logger();
