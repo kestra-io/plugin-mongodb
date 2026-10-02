@@ -3,10 +3,16 @@ package io.kestra.plugin.mongodb;
 import java.time.Duration;
 import java.util.Optional;
 
+import org.bson.BsonDocument;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCursor;
 
 import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Plugin;
+import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.conditions.ConditionContext;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.property.Property;
@@ -16,7 +22,6 @@ import io.kestra.core.runners.RunContext;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
-import io.kestra.core.models.annotations.PluginProperty;
 
 @SuperBuilder
 @ToString
@@ -67,6 +72,7 @@ import io.kestra.core.models.annotations.PluginProperty;
     }
 )
 public class Trigger extends AbstractTrigger implements PollingTriggerInterface, TriggerOutput<Find.Output> {
+    private static final Logger log = LoggerFactory.getLogger(Trigger.class);
 
     @Schema(
         title = "Polling interval",
@@ -137,6 +143,16 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     @PluginProperty(group = "advanced")
     private Property<Boolean> store = Property.ofValue(false);
 
+    @Getter(AccessLevel.NONE)
+    @EqualsAndHashCode.Exclude
+    @ToString.Exclude
+    private transient volatile MongoClient client;
+
+    @Getter(AccessLevel.NONE)
+    @EqualsAndHashCode.Exclude
+    @ToString.Exclude
+    private transient volatile MongoCursor<BsonDocument> cursor;
+
     @Override
     public Optional<Execution> evaluate(ConditionContext conditionContext, TriggerContext context) throws Exception {
         RunContext runContext = conditionContext.getRunContext();
@@ -156,17 +172,79 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
             .store(this.store)
             .build();
 
-        Find.Output output = find.run(runContext);
+        MongoClient mongoClient = this.connection.client(runContext);
+        this.client = mongoClient;
+        try (mongoClient) {
+            Find.Output output = find.run(runContext, mongoClient, mongoCursor -> this.cursor = mongoCursor);
 
-        logger.debug("Found '{}' rows", output.getSize());
+            logger.debug("Found '{}' rows", output.getSize());
 
-        if (Optional.ofNullable(output.getSize()).orElse(0L) == 0) {
-            return Optional.empty();
+            if (Optional.ofNullable(output.getSize()).orElse(0L) == 0) {
+                return Optional.empty();
+            }
+
+            return Optional.of(
+                TriggerService.generateExecution(this, conditionContext, context, output)
+            );
+        } finally {
+            this.cursor = null;
+            this.client = null;
+        }
+    }
+
+    /**
+     * Best-effort cancellation of an in-flight evaluation, without blocking the calling worker thread.
+     *
+     * <p>
+     * Closing the cursor requests driver teardown of the cursor and closing the client releases its
+     * resources, but neither is guaranteed to interrupt a genuinely wedged server or network read: an
+     * already in-flight getMore() may continue until it returns, with teardown completing afterwards,
+     * and a connection currently checked out and blocked may not be reclaimed immediately.
+     *
+     * <p>
+     * The closes run on a dedicated daemon thread because closing may itself perform a synchronous
+     * teardown round trip while this plugin configures no client-side timeout bound. This method therefore
+     * always returns promptly and never throws.
+     *
+     * <p>
+     * Each kill() invocation spawns one daemon thread and there is currently no cap or deduplication:
+     * a genuinely wedged server with no socket timeout may hold that daemon thread indefinitely.
+     * Because the thread is a daemon, it never keeps JVM shutdown alive.
+     */
+    @Override
+    public void kill() {
+        MongoCursor<BsonDocument> mongoCursor = this.cursor;
+        MongoClient mongoClient = this.client;
+        if (mongoCursor == null && mongoClient == null) {
+            return;
         }
 
-        return Optional.of(
-            TriggerService.generateExecution(this, conditionContext, context, output)
+        Thread killThread = new Thread(
+            () -> closeQuietly(mongoCursor, mongoClient),
+            "kestra-mongodb-trigger-kill"
         );
+        killThread.setDaemon(true);
+        killThread.start();
+    }
+
+    private static void closeQuietly(MongoCursor<BsonDocument> mongoCursor, MongoClient mongoClient) {
+        if (mongoCursor != null) {
+            try {
+                mongoCursor.close();
+            } catch (Exception e) {
+                log.debug("Failed to close MongoDB cursor during kill()", e);
+                // closing a cursor is idempotent, never fail kill()
+            }
+        }
+
+        if (mongoClient != null) {
+            try {
+                mongoClient.close();
+            } catch (Exception e) {
+                log.debug("Failed to close MongoDB client during kill()", e);
+                // closing a client is idempotent, never fail kill()
+            }
+        }
     }
 
 }
