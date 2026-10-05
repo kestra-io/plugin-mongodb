@@ -8,7 +8,11 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
+import org.bson.Document;
 import org.junit.jupiter.api.Test;
+
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
 
 import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.property.Property;
@@ -90,7 +94,69 @@ class BulkTest extends MongoDbContainer {
         Bulk.Output runOutput = put.run(runContext);
 
         assertThat(runOutput.getSize(), is(9L));
+        assertThat(runOutput.getInsertedCount(), is(5));
+        assertThat(runOutput.getMatchedCount(), is(4));
+        assertThat(runOutput.getModifiedCount(), is(4));
+        assertThat(runOutput.getDeletedCount(), is(1));
         assertThat(runContext.metrics().stream().filter(e -> e.getName().equals("requests.count")).findFirst().orElseThrow().getValue(), is(1D));
         assertThat(runContext.metrics().stream().filter(e -> e.getName().equals("records")).findFirst().orElseThrow().getValue(), is(9D));
+    }
+
+    @Test
+    void runWithStandardAndFlatInsertOne() throws Exception {
+        RunContext runContext = runContextFactory.of();
+        String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+
+        File tempFile = File.createTempFile(this.getClass().getSimpleName().toLowerCase() + "_insert_", ".trs");
+        try (OutputStream output = new FileOutputStream(tempFile)) {
+            output.write(
+                ("{ \"insertOne\": { \"document\": { \"_id\": 42, \"name\": \"Diya\", \"kind\": \"standard\" } } }\n")
+                    .getBytes(StandardCharsets.UTF_8)
+            );
+            output.write(
+                ("{ \"insertOne\": { \"_id\": 43, \"name\": \"Legacy\", \"kind\": \"flat\" } }\n")
+                    .getBytes(StandardCharsets.UTF_8)
+            );
+            output.write(
+                ("{ \"insertOne\": { \"_id\": 44, \"document\": { \"title\": \"Report\" }, \"kind\": \"flat\" } }\n")
+                    .getBytes(StandardCharsets.UTF_8)
+            );
+            output.write(
+                ("{ \"updateOne\": { \"filter\": { \"_id\": 42 }, \"update\": { \"$set\": { \"updated\": true } } } }\n")
+                    .getBytes(StandardCharsets.UTF_8)
+            );
+        }
+
+        URI uri = storageInterface.put(TenantService.MAIN_TENANT, null, URI.create("/" + IdUtils.create() + ".ion"), new FileInputStream(tempFile));
+
+        Bulk put = Bulk.builder()
+            .connection(
+                MongoDbConnection.builder()
+                    .uri(Property.ofValue(connectionUri))
+                    .build()
+            )
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("bulk_insert"))
+            .from(Property.ofValue(uri.toString()))
+            .build();
+
+        put.run(runContext);
+
+        try (MongoClient client = getMongoClient()) {
+            MongoCollection<Document> collection = client.getDatabase(database).getCollection("bulk_insert", Document.class);
+
+            assertThat(
+                collection.find(new Document("_id", 42)).first(),
+                is(new Document("_id", 42).append("name", "Diya").append("kind", "standard").append("updated", true))
+            );
+            assertThat(
+                collection.find(new Document("_id", 43)).first(),
+                is(new Document("_id", 43).append("name", "Legacy").append("kind", "flat"))
+            );
+            assertThat(
+                collection.find(new Document("_id", 44)).first(),
+                is(new Document("_id", 44).append("document", new Document("title", "Report")).append("kind", "flat"))
+            );
+        }
     }
 }

@@ -53,8 +53,8 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
                   - id: make_actions
                     type: io.kestra.plugin.core.storage.Write
                     content: |
-                      { "insertOne" : {"firstName": "John", "lastName": "Doe", "city": "Paris"}}
-                      { "insertOne" : {"firstName": "Ravi", "lastName": "Singh", "city": "Mumbai"}}
+                      { "insertOne" : {"document": {"firstName": "John", "lastName": "Doe", "city": "Paris"}}}
+                      { "insertOne" : {"document": {"firstName": "Ravi", "lastName": "Singh", "city": "Mumbai"}}}
                       { "deleteMany": {"filter": {"city": "Bengaluru"}}}
 
                   - id: bulk
@@ -100,7 +100,7 @@ public class Bulk extends AbstractLoad {
 
                 WriteModel<Bson> docWriteRequest = switch (operation.getKey()) {
                     case "insertOne" -> new InsertOneModel<>(
-                        operation.getValue().asDocument()
+                        getInsertOneDocument(operation.getValue().asDocument())
                     );
                     case "replaceOne" -> new ReplaceOneModel<>(
                         operation.getValue().asDocument().get("filter").asDocument(),
@@ -132,6 +132,16 @@ public class Bulk extends AbstractLoad {
 
             s.complete();
         });
+    }
+
+    // MongoDB bulkWrite syntax is { insertOne: { document: <document> } }; any other body is the legacy flat
+    // syntax where the body itself is the document. A body with only an embedded "document" is read as bulkWrite.
+    private BsonDocument getInsertOneDocument(BsonDocument insertOne) {
+        if (insertOne.size() == 1 && insertOne.isDocument("document")) {
+            return insertOne.getDocument("document");
+        }
+
+        return insertOne;
     }
 
     private ReplaceOptions getReplaceOptions(BsonDocument document) {
