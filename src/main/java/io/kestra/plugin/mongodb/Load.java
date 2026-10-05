@@ -1,13 +1,16 @@
 package io.kestra.plugin.mongodb;
 
 import java.io.InputStream;
+import java.util.List;
 import java.util.Map;
 
+import org.bson.BsonDocument;
 import org.bson.BsonObjectId;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.mongodb.client.model.InsertOneModel;
 import com.mongodb.client.model.WriteModel;
 
@@ -19,6 +22,7 @@ import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.FileSerde;
+import io.kestra.core.serializers.JacksonMapper;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
@@ -111,9 +115,37 @@ public class Load extends AbstractLoad {
                     }
                 }
 
+                decodeExtendedJsonFields(values);
+
                 // we wrap the in-memory Map directly instead of serializing it to a
                 // JSON string and parsing it back.
                 return new InsertOneModel<>(new Document(values));
             }));
+    }
+
+    private static void decodeExtendedJsonFields(Map<String, Object> document) throws JsonProcessingException {
+        for (var entry : document.entrySet()) {
+            entry.setValue(decodeExtendedJson(entry.getValue()));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Object decodeExtendedJson(Object value) throws JsonProcessingException {
+        if (value instanceof Map<?, ?> map) {
+            // the driver's JsonReader only interprets an object as Extended JSON based on its first key
+            if (!map.isEmpty() && map.keySet().iterator().next().toString().startsWith("$")) {
+                var decoded = BsonDocument.parse(JacksonMapper.ofJson().writeValueAsString(Map.of("value", map))).get("value");
+                if (!decoded.isDocument()) {
+                    return decoded;
+                }
+            }
+            decodeExtendedJsonFields((Map<String, Object>) map);
+        } else if (value instanceof List<?> list) {
+            var iterator = ((List<Object>) list).listIterator();
+            while (iterator.hasNext()) {
+                iterator.set(decodeExtendedJson(iterator.next()));
+            }
+        }
+        return value;
     }
 }
