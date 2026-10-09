@@ -5,8 +5,11 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.net.URI;
+import java.util.List;
 import java.util.Locale;
 
+import org.bson.BsonDocument;
+import org.bson.BsonType;
 import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
@@ -114,6 +117,62 @@ class LoadTest extends MongoDbContainer {
             assertThat(stored.get("_id"), is(expectedId));
             assertThat(stored.containsKey("id"), is(false));
             assertThat(stored.getString("name"), is("john"));
+        }
+    }
+
+    @Test
+    void runWithExtendedJson() throws Exception {
+        RunContext runContext = runContextFactory.of();
+        String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+
+        File tempFile = File.createTempFile(this.getClass().getSimpleName().toLowerCase() + "_extended_json_", ".trs");
+        OutputStream output = new FileOutputStream(tempFile);
+
+        ObjectId expectedId = new ObjectId();
+        FileSerde.write(
+            output, ImmutableMap.of(
+                "id", expectedId.toString(),
+                "createdAt", ImmutableMap.of("$date", "2024-01-01T00:00:00Z"),
+                "amount", ImmutableMap.of("$numberDecimal", "12.34"),
+                "externalId", ImmutableMap.of("$oid", "60930c39a982931c20ef6cd6"),
+                "nested", ImmutableMap.of(
+                    "count", ImmutableMap.of("$numberLong", "123"),
+                    "ids", List.of(ImmutableMap.of("$oid", "60930c39a982931c20ef6cd6"))
+                )
+            )
+        );
+        URI uri = storageInterface.put(TenantService.MAIN_TENANT, null, URI.create("/" + IdUtils.create() + ".ion"), new FileInputStream(tempFile));
+
+        Load put = Load.builder()
+            .connection(
+                MongoDbConnection.builder()
+                    .uri(Property.ofValue(connectionUri))
+                    .build()
+            )
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("load_extended_json"))
+            .from(Property.ofValue(uri.toString()))
+            .idKey(Property.ofValue("id"))
+            .build();
+
+        Load.Output runOutput = put.run(runContext);
+
+        assertThat(runOutput.getInsertedCount(), is(1));
+
+        try (MongoClient client = getMongoClient()) {
+            BsonDocument stored = client.getDatabase(database)
+                .getCollection("load_extended_json", BsonDocument.class)
+                .find()
+                .first();
+
+            assertThat(stored, is(org.hamcrest.Matchers.notNullValue()));
+            assertThat(stored.getObjectId("_id").getValue(), is(expectedId));
+            assertThat(stored.containsKey("id"), is(false));
+            assertThat(stored.get("createdAt").getBsonType(), is(BsonType.DATE_TIME));
+            assertThat(stored.get("amount").getBsonType(), is(BsonType.DECIMAL128));
+            assertThat(stored.get("externalId").getBsonType(), is(BsonType.OBJECT_ID));
+            assertThat(stored.getDocument("nested").get("count").getBsonType(), is(BsonType.INT64));
+            assertThat(stored.getDocument("nested").getArray("ids").get(0).getBsonType(), is(BsonType.OBJECT_ID));
         }
     }
 }
