@@ -39,7 +39,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 @NoArgsConstructor
 @Schema(
     title = "Run MongoDB bulkWrite from NDJSON",
-    description = "Reads newline-delimited bulk operations from internal storage and executes MongoDB bulkWrite. Supports insert/update/delete formats defined in MongoDB Bulk API (https://www.mongodb.com/docs/manual/reference/method/Bulk/). Inherits chunking from AbstractLoad (default 1000 per bulk request)."
+    description = "Reads newline-delimited bulk operations from internal storage and executes MongoDB bulkWrite. Supports insertOne, updateOne, updateMany, replaceOne, deleteOne and deleteMany in the db.collection.bulkWrite() format (https://www.mongodb.com/docs/manual/reference/method/db.collection.bulkWrite/). insertOne also accepts the legacy flat form where the body is the document itself; a body whose only field is an object named `document` is read as the bulkWrite form. Inherits chunking from AbstractLoad (default 1000 per bulk request)."
 )
 @Plugin(
     examples = {
@@ -134,8 +134,7 @@ public class Bulk extends AbstractLoad {
         });
     }
 
-    // MongoDB bulkWrite syntax is { insertOne: { document: <document> } }; any other body is the legacy flat
-    // syntax where the body itself is the document. A body with only an embedded "document" is read as bulkWrite.
+    // unwrap the bulkWrite { document: ... } envelope; any other body stays as-is for the legacy flat syntax
     private BsonDocument getInsertOneDocument(BsonDocument insertOne) {
         if (insertOne.size() == 1 && insertOne.isDocument("document")) {
             return insertOne.getDocument("document");
