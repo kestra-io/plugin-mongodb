@@ -39,7 +39,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 @NoArgsConstructor
 @Schema(
     title = "Run MongoDB bulkWrite from NDJSON",
-    description = "Reads newline-delimited bulk operations from internal storage and executes MongoDB bulkWrite. Supports insert/update/delete formats defined in MongoDB Bulk API (https://www.mongodb.com/docs/manual/reference/method/Bulk/). Inherits chunking from AbstractLoad (default 1000 per bulk request)."
+    description = "Reads newline-delimited bulk operations from internal storage and executes MongoDB bulkWrite. Supports insertOne, updateOne, updateMany, replaceOne, deleteOne and deleteMany in the db.collection.bulkWrite() format (https://www.mongodb.com/docs/manual/reference/method/db.collection.bulkWrite/). insertOne also accepts the legacy flat form where the body is the document itself; a body whose only field is an object named `document` is read as the bulkWrite form. Inherits chunking from AbstractLoad (default 1000 per bulk request)."
 )
 @Plugin(
     examples = {
@@ -53,8 +53,8 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
                   - id: make_actions
                     type: io.kestra.plugin.core.storage.Write
                     content: |
-                      { "insertOne" : {"firstName": "John", "lastName": "Doe", "city": "Paris"}}
-                      { "insertOne" : {"firstName": "Ravi", "lastName": "Singh", "city": "Mumbai"}}
+                      { "insertOne" : {"document": {"firstName": "John", "lastName": "Doe", "city": "Paris"}}}
+                      { "insertOne" : {"document": {"firstName": "Ravi", "lastName": "Singh", "city": "Mumbai"}}}
                       { "deleteMany": {"filter": {"city": "Bengaluru"}}}
 
                   - id: bulk
@@ -100,7 +100,7 @@ public class Bulk extends AbstractLoad {
 
                 WriteModel<Bson> docWriteRequest = switch (operation.getKey()) {
                     case "insertOne" -> new InsertOneModel<>(
-                        operation.getValue().asDocument()
+                        getInsertOneDocument(operation.getValue().asDocument())
                     );
                     case "replaceOne" -> new ReplaceOneModel<>(
                         operation.getValue().asDocument().get("filter").asDocument(),
@@ -132,6 +132,15 @@ public class Bulk extends AbstractLoad {
 
             s.complete();
         });
+    }
+
+    // unwrap the bulkWrite { document: ... } envelope; any other body stays as-is for the legacy flat syntax
+    private BsonDocument getInsertOneDocument(BsonDocument insertOne) {
+        if (insertOne.size() == 1 && insertOne.isDocument("document")) {
+            return insertOne.getDocument("document");
+        }
+
+        return insertOne;
     }
 
     private ReplaceOptions getReplaceOptions(BsonDocument document) {
