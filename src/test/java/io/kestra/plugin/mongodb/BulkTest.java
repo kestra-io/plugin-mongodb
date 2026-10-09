@@ -1,14 +1,18 @@
 package io.kestra.plugin.mongodb;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 import org.bson.Document;
+import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
 import com.mongodb.client.MongoClient;
@@ -24,6 +28,9 @@ import io.kestra.core.utils.IdUtils;
 import jakarta.inject.Inject;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 
 @KestraTest
@@ -157,6 +164,88 @@ class BulkTest extends MongoDbContainer {
                 collection.find(new Document("_id", 44)).first(),
                 is(new Document("_id", 44).append("document", new Document("title", "Report")).append("kind", "flat"))
             );
+        }
+    }
+
+    @Test
+    void singleObjectDocumentFieldIsReadAsBulkWriteEnvelope() throws Exception {
+        String database = newDatabase();
+
+        // documented rule: a body whose only field is an object named "document" is the envelope, even when empty
+        runBulk(
+            database, "envelope_rule",
+            "{\"insertOne\": {\"document\": {\"title\": \"Report\"}}}",
+            "{\"insertOne\": {\"document\": {}}}"
+        );
+
+        List<Document> stored = findAll(database, "envelope_rule");
+        assertThat(stored, hasSize(2));
+        for (Document document : stored) {
+            assertThat(document.get("_id"), instanceOf(ObjectId.class));
+            assertThat(document.containsKey("document"), is(false));
+        }
+        assertThat(stored.stream().map(document -> document.get("title")).toList(), containsInAnyOrder("Report", null));
+    }
+
+    @Test
+    void standardInsertOneUnwrapsOnlyTheOuterEnvelope() throws Exception {
+        String database = newDatabase();
+
+        runBulk(database, "unwrap_once", "{\"insertOne\": {\"document\": {\"_id\": 1, \"document\": {\"title\": \"Report\"}}}}");
+
+        assertThat(findAll(database, "unwrap_once"), is(List.of(new Document("_id", 1).append("document", new Document("title", "Report")))));
+    }
+
+    @Test
+    void insertOneWithNonObjectDocumentFieldStaysFlat() throws Exception {
+        String database = newDatabase();
+
+        runBulk(
+            database, "non_object",
+            "{\"insertOne\": {\"document\": \"plain text\"}}",
+            "{\"insertOne\": {\"document\": [{\"a\": 1}]}}",
+            "{\"insertOne\": {\"document\": null}}"
+        );
+
+        List<Document> stored = findAll(database, "non_object");
+        assertThat(stored, hasSize(3));
+        for (Document document : stored) {
+            assertThat(document.keySet(), containsInAnyOrder("_id", "document"));
+        }
+        assertThat(
+            stored.stream().map(document -> document.get("document")).toList(),
+            containsInAnyOrder("plain text", List.of(new Document("a", 1)), null)
+        );
+    }
+
+    private static String newDatabase() {
+        return "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+    }
+
+    private void runBulk(String database, String collection, String... lines) throws Exception {
+        URI uri = storageInterface.put(
+            TenantService.MAIN_TENANT,
+            null,
+            URI.create("/" + IdUtils.create() + ".ion"),
+            new ByteArrayInputStream((String.join("\n", lines) + "\n").getBytes(StandardCharsets.UTF_8))
+        );
+
+        Bulk.builder()
+            .connection(
+                MongoDbConnection.builder()
+                    .uri(Property.ofValue(connectionUri))
+                    .build()
+            )
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue(collection))
+            .from(Property.ofValue(uri.toString()))
+            .build()
+            .run(runContextFactory.of());
+    }
+
+    private static List<Document> findAll(String database, String collection) {
+        try (MongoClient client = getMongoClient()) {
+            return client.getDatabase(database).getCollection(collection, Document.class).find().into(new ArrayList<>());
         }
     }
 }
