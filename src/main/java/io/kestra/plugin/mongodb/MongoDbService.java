@@ -1,12 +1,16 @@
 package io.kestra.plugin.mongodb;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.util.AbstractMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.bson.BsonBinary;
+import org.bson.BsonBinarySubType;
 import org.bson.BsonDocument;
 import org.bson.BsonValue;
 
@@ -25,6 +29,34 @@ public abstract class MongoDbService {
             return new BsonDocument();
         } else {
             throw new IllegalVariableEvaluationException("Invalid value type '" + value.getClass() + "'");
+        }
+    }
+
+    public static String toIdString(BsonValue id) {
+        switch (id.getBsonType()) {
+            case OBJECT_ID:
+                return id.asObjectId().getValue().toString();
+            case STRING:
+                return id.asString().getValue();
+            case INT32:
+                return String.valueOf(id.asInt32().getValue());
+            case INT64:
+                return String.valueOf(id.asInt64().getValue());
+            case DOUBLE:
+                return String.valueOf(id.asDouble().getValue());
+            case DECIMAL128:
+                return id.asDecimal128().getValue().toString();
+            case BINARY: {
+                BsonBinary binary = id.asBinary();
+                if (BsonBinarySubType.isUuid(binary.getType()) && binary.getData().length == 16) {
+                    // subtype 3 has no agreed byte order, so both UUID subtypes are read as stored
+                    ByteBuffer bytes = ByteBuffer.wrap(binary.getData());
+                    return new UUID(bytes.getLong(), bytes.getLong()).toString();
+                }
+                return id.toString();
+            }
+            default:
+                return id.toString();
         }
     }
 

@@ -111,4 +111,40 @@ class CrudTest extends MongoDbContainer {
         Delete.Output deleteOutput = delete.run(runContext);
         assertThat(deleteOutput.getDeletedCount(), is(1L));
     }
+
+    @Test
+    void insertOneObjectId() throws Exception {
+        assertThat(insertOneWithId(ImmutableMap.of("$oid", "60930c39a982931c20ef6cd6")), is("60930c39a982931c20ef6cd6"));
+    }
+
+    @Test
+    void insertOneStringId() throws Exception {
+        assertThat(insertOneWithId("user-42"), is("user-42"));
+    }
+
+    @Test
+    void insertOneIntegerId() throws Exception {
+        assertThat(insertOneWithId(42), is("42"));
+    }
+
+    @Test
+    void insertOneUuidId() throws Exception {
+        assertThat(insertOneWithId(ImmutableMap.of("$uuid", "3b241101-e2bb-4255-8caf-4136c566a962")), is("3b241101-e2bb-4255-8caf-4136c566a962"));
+    }
+
+    private String insertOneWithId(Object id) throws Exception {
+        String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+
+        InsertOne insert = InsertOne.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("insert"))
+            .document(ImmutableMap.of("_id", id, "name", "John Doe"))
+            .build();
+
+        InsertOne.Output insertOutput = insert.run(runContextFactory.of(Map.of()));
+        assertThat(insertOutput.getWasAcknowledged(), is(true));
+
+        return insertOutput.getInsertedId();
+    }
 }

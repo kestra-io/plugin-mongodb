@@ -144,7 +144,7 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
             );
 
             return Output.builder()
-                .upsertedId(updateResult.getUpsertedId() != null ? updateResult.getUpsertedId().asObjectId().getValue().toString() : null)
+                .upsertedId(updateResult.getUpsertedId() != null ? MongoDbService.toIdString(updateResult.getUpsertedId()) : null)
                 .wasAcknowledged(updateResult.wasAcknowledged())
                 .matchedCount(updateResult.getMatchedCount())
                 .modifiedCount(updateResult.getModifiedCount())
