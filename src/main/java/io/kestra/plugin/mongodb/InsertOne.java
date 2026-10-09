@@ -112,7 +112,7 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
             );
 
             return Output.builder()
-                .insertedId(Objects.requireNonNull(insertOneResult.getInsertedId()).asObjectId().getValue().toString())
+                .insertedId(MongoDbService.toIdString(Objects.requireNonNull(insertOneResult.getInsertedId())))
                 .wasAcknowledged(insertOneResult.wasAcknowledged())
                 .build();
         }
@@ -122,7 +122,8 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
     @Getter
     public static class Output implements io.kestra.core.models.tasks.Output {
         @Schema(
-            title = "Inserted document id"
+            title = "Inserted document id",
+            description = "ObjectId as its hex string, UUID as its canonical string, other types as their string value."
         )
         private String insertedId;
 
