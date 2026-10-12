@@ -118,7 +118,7 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
     public Update.Output run(RunContext runContext) throws Exception {
         Logger logger = runContext.logger();
 
-        try (MongoClient client = this.connection.client(runContext)) {
+        try (MongoClient client = this.client(runContext)) {
             MongoCollection<Bson> collection = this.collection(runContext, client);
 
             BsonDocument bsonDocument = MongoDbService.toDocument(runContext, this.document);
