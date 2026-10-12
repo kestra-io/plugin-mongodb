@@ -123,7 +123,13 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
     public static class Output implements io.kestra.core.models.tasks.Output {
         @Schema(
             title = "Inserted document id",
-            description = "ObjectId as its hex string, UUID as its canonical string, other types as their string value."
+            description = """
+                The `_id` of the inserted document, as a string:
+                - ObjectId: its hex string
+                - String: as is
+                - Int32, Int64, Double or Decimal128: the number
+                - UUID (Binary subtype 4): its canonical string
+                - any other type, including a legacy UUID (Binary subtype 3) or a document: its relaxed MongoDB Extended JSON, such as `{"a": 1}`"""
         )
         private String insertedId;
 

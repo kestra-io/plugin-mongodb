@@ -163,7 +163,13 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
     public static class Output implements io.kestra.core.models.tasks.Output {
         @Schema(
             title = "Upserted document id",
-            description = "Null unless MongoDB created a document during the write."
+            description = """
+                Null unless MongoDB created a document during the write. Otherwise the `_id` of that document, as a string:
+                - ObjectId: its hex string
+                - String: as is
+                - Int32, Int64, Double or Decimal128: the number
+                - UUID (Binary subtype 4): its canonical string
+                - any other type, including a legacy UUID (Binary subtype 3) or a document: its relaxed MongoDB Extended JSON, such as `{"a": 1}`"""
         )
         @Nullable
         private String upsertedId;

@@ -1,15 +1,12 @@
 package io.kestra.plugin.mongodb;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.util.AbstractMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
-import org.bson.BsonBinary;
 import org.bson.BsonBinarySubType;
 import org.bson.BsonDocument;
 import org.bson.BsonValue;
@@ -47,17 +44,23 @@ public abstract class MongoDbService {
             case DECIMAL128:
                 return id.asDecimal128().getValue().toString();
             case BINARY: {
-                BsonBinary binary = id.asBinary();
-                if (BsonBinarySubType.isUuid(binary.getType()) && binary.getData().length == 16) {
-                    // subtype 3 has no agreed byte order, so both UUID subtypes are read as stored
-                    ByteBuffer bytes = ByteBuffer.wrap(binary.getData());
-                    return new UUID(bytes.getLong(), bytes.getLong()).toString();
+                var binary = id.asBinary();
+                // legacy subtype 3 UUIDs use a different byte order in each driver, so only subtype 4 is decoded
+                if (binary.getType() == BsonBinarySubType.UUID_STANDARD.getValue() && binary.getData().length == 16) {
+                    return binary.asUuid().toString();
                 }
-                return id.toString();
+                return toRelaxedJson(id);
             }
             default:
-                return id.toString();
+                return toRelaxedJson(id);
         }
+    }
+
+    // a stable form for any other type, e.g. {"a": 1} or {"$date": "2024-01-01T00:00:00Z"}
+    private static String toRelaxedJson(BsonValue value) {
+        // only a document serializes on its own, so the value is written as a field and the field's JSON is kept
+        var json = new BsonDocument("v", value).toJson();
+        return json.substring(json.indexOf(':') + 1, json.length() - 1).strip();
     }
 
     public static Object map(BsonValue doc) {

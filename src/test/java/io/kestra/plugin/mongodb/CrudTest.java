@@ -132,17 +132,34 @@ class CrudTest extends MongoDbContainer {
         assertThat(insertOneWithId(ImmutableMap.of("$uuid", "3b241101-e2bb-4255-8caf-4136c566a962")), is("3b241101-e2bb-4255-8caf-4136c566a962"));
     }
 
-    private String insertOneWithId(Object id) throws Exception {
-        String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+    @Test
+    void insertOneLongId() throws Exception {
+        assertThat(insertOneWithId(ImmutableMap.of("$numberLong", "9007199254740993")), is("9007199254740993"));
+    }
 
-        InsertOne insert = InsertOne.builder()
+    @Test
+    void insertOneLegacyUuidIdStaysRaw() throws Exception {
+        var legacyUuid = ImmutableMap.of("$binary", ImmutableMap.of("base64", "VUK74gERJDtiqWbFNkGvjA==", "subType", "03"));
+
+        assertThat(insertOneWithId(legacyUuid), is("{\"$binary\": {\"base64\": \"VUK74gERJDtiqWbFNkGvjA==\", \"subType\": \"03\"}}"));
+    }
+
+    @Test
+    void insertOneDocumentId() throws Exception {
+        assertThat(insertOneWithId(ImmutableMap.of("a", 1, "b", "x")), is("{\"a\": 1, \"b\": \"x\"}"));
+    }
+
+    private String insertOneWithId(Object id) throws Exception {
+        var database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+
+        var insert = InsertOne.builder()
             .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
             .database(Property.ofValue(database))
             .collection(Property.ofValue("insert"))
             .document(ImmutableMap.of("_id", id, "name", "John Doe"))
             .build();
 
-        InsertOne.Output insertOutput = insert.run(runContextFactory.of(Map.of()));
+        var insertOutput = insert.run(runContextFactory.of(Map.of()));
         assertThat(insertOutput.getWasAcknowledged(), is(true));
 
         return insertOutput.getInsertedId();
