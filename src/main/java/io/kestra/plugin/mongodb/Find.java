@@ -38,7 +38,10 @@ import reactor.core.publisher.Flux;
 @NoArgsConstructor
 @Schema(
     title = "Query documents from MongoDB",
-    description = "Executes find on a collection with optional projection, sort, skip, and limit. Filter/projection/sort accept BSON strings or maps rendered from Flow variables. Results are fetched in-memory by default or stored as Ion in internal storage when `store` is true."
+    description = """
+        Executes find on a collection with optional projection, sort, skip, and limit. Filter/projection/sort accept BSON strings or maps rendered from Flow variables. Results are fetched in-memory by default or stored as Ion in internal storage when `store` is true.
+
+        Decimal128 values are returned as exact decimals. Values with no JSON equivalent (Timestamp, regular expression, MinKey, MaxKey, JavaScript, DBPointer) are returned as [MongoDB Extended JSON](https://www.mongodb.com/docs/manual/reference/mongodb-extended-json/) objects, such as `{"$timestamp": {"t": 1700000000, "i": 7}}`, which `Load` writes back as the same type. Deprecated Symbol and Undefined values are returned as a string and null."""
 )
 @Plugin(
     examples = {

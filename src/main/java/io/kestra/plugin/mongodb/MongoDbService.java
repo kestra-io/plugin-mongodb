@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
 
 import org.bson.BsonDocument;
 import org.bson.BsonValue;
+import org.bson.types.Decimal128;
 
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.runners.RunContext;
@@ -40,7 +41,7 @@ public abstract class MongoDbService {
             case DOUBLE:
                 return doc.asDouble().getValue();
             case DECIMAL128:
-                return doc.asDecimal128().getValue();
+                return decimal(doc.asDecimal128().getValue());
 
             case STRING:
                 return doc.asString().getValue();
@@ -50,8 +51,6 @@ public abstract class MongoDbService {
             case BOOLEAN:
                 return doc.asBoolean().getValue();
 
-            case TIMESTAMP:
-                return Instant.ofEpochMilli(doc.asTimestamp().getValue());
             case DATE_TIME:
                 return Instant.ofEpochMilli(doc.asDateTime().getValue());
 
@@ -77,18 +76,67 @@ public abstract class MongoDbService {
             case OBJECT_ID:
                 return doc.asObjectId().getValue().toString();
 
-            case UNDEFINED:
-                throw new IllegalArgumentException("Undefined BsonValue:" + doc);
-            case MIN_KEY:
-            case MAX_KEY:
-            case JAVASCRIPT:
-            case JAVASCRIPT_WITH_SCOPE:
-            case REGULAR_EXPRESSION:
+            // deprecated types, read the way drivers usually decode them
             case SYMBOL:
+                return doc.asSymbol().getSymbol();
+            case UNDEFINED:
+                return null;
+
+            // no JSON equivalent: MongoDB Extended JSON, which Load writes back as the same BSON type
+            case TIMESTAMP:
+                // seconds and increment are unsigned 32-bit values
+                return document(
+                    "$timestamp",
+                    document(
+                        "t", Integer.toUnsignedLong(doc.asTimestamp().getTime()),
+                        "i", Integer.toUnsignedLong(doc.asTimestamp().getInc())
+                    )
+                );
+            case REGULAR_EXPRESSION:
+                return document(
+                    "$regularExpression",
+                    document("pattern", doc.asRegularExpression().getPattern(), "options", doc.asRegularExpression().getOptions())
+                );
+            case MIN_KEY:
+                return document("$minKey", 1);
+            case MAX_KEY:
+                return document("$maxKey", 1);
+            case JAVASCRIPT:
+                return document("$code", doc.asJavaScript().getCode());
+            case JAVASCRIPT_WITH_SCOPE:
+                return document("$code", doc.asJavaScriptWithScope().getCode(), "$scope", map(doc.asJavaScriptWithScope().getScope()));
             case DB_POINTER:
+                return document(
+                    "$dbPointer",
+                    document("$ref", doc.asDBPointer().getNamespace(), "$id", document("$oid", doc.asDBPointer().getId().toHexString()))
+                );
+
             case END_OF_DOCUMENT:
             default:
                 throw new IllegalArgumentException("Unsupported BsonValue " + doc.getBsonType() + ":" + doc);
         }
+    }
+
+    private static Object decimal(Decimal128 value) {
+        try {
+            // exact, where a Double keeps about 16 significant digits
+            return value.bigDecimalValue();
+        } catch (ArithmeticException e) {
+            // NaN, infinities and negative zero have no BigDecimal form
+            return value.doubleValue();
+        }
+    }
+
+    // ordered, since Extended JSON readers such as Load recognize a wrapper by its first key
+    private static Map<String, Object> document(String key, Object value) {
+        var document = new LinkedHashMap<String, Object>();
+        document.put(key, value);
+        return document;
+    }
+
+    private static Map<String, Object> document(String key1, Object value1, String key2, Object value2) {
+        var document = document(key1, value1);
+        document.put(key2, value2);
+        return document;
     }
 }

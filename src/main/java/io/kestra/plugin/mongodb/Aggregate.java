@@ -43,7 +43,10 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 @NoArgsConstructor
 @Schema(
     title = "Run an aggregation pipeline",
-    description = "Executes a MongoDB aggregation pipeline on a collection. Pipeline stages are rendered from Flow variables as BSON documents. Allows disk use by default, caps server execution at 60s, batches 1000 docs, and can fetch results or store them to internal storage."
+    description = """
+        Executes a MongoDB aggregation pipeline on a collection. Pipeline stages are rendered from Flow variables as BSON documents. Allows disk use by default, caps server execution at 60s, batches 1000 docs, and can fetch results or store them to internal storage.
+
+        Decimal128 values are returned as exact decimals. Values with no JSON equivalent (Timestamp, regular expression, MinKey, MaxKey, JavaScript, DBPointer) are returned as [MongoDB Extended JSON](https://www.mongodb.com/docs/manual/reference/mongodb-extended-json/) objects, such as `{"$timestamp": {"t": 1700000000, "i": 7}}`, which `Load` writes back as the same type. Deprecated Symbol and Undefined values are returned as a string and null."""
 )
 @Plugin(
     examples = {
