@@ -69,6 +69,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
             AtomicInteger insertedCount = new AtomicInteger();
             AtomicInteger modifiedCount = new AtomicInteger();
             AtomicInteger deletedCount = new AtomicInteger();
+            AtomicInteger upsertedCount = new AtomicInteger();
 
             var renderedChunk = runContext.render(this.chunk).as(Integer.class).orElse(null);
             Flux<BulkWriteResult> flowable = this.source(runContext, inputStream)
@@ -89,6 +90,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
                     insertedCount.addAndGet(bulkItemResponse.getInsertedCount());
                     modifiedCount.addAndGet(bulkItemResponse.getModifiedCount());
                     deletedCount.addAndGet(bulkItemResponse.getDeletedCount());
+                    upsertedCount.addAndGet(bulkItemResponse.getUpserts().size());
                 });
 
             // metrics & finalize
@@ -120,6 +122,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
                 .insertedCount(insertedCount.get())
                 .modifiedCount(modifiedCount.get())
                 .deletedCount(deletedCount.get())
+                .upsertedCount(upsertedCount.get())
                 .build();
         }
     }
@@ -160,5 +163,12 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
         )
         @Builder.Default
         private int modifiedCount = 0;
+
+        @Schema(
+            title = "Upserted documents",
+            description = "Documents created by update or replacement models with `upsert: true` that matched no document."
+        )
+        @Builder.Default
+        private int upsertedCount = 0;
     }
 }

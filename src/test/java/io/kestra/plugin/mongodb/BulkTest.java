@@ -1,15 +1,19 @@
 package io.kestra.plugin.mongodb;
 
+import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.OutputStream;
+import java.io.StringReader;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.bson.Document;
 import org.bson.types.ObjectId;
@@ -26,12 +30,15 @@ import io.kestra.core.tenant.TenantService;
 import io.kestra.core.utils.IdUtils;
 
 import jakarta.inject.Inject;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @KestraTest
 class BulkTest extends MongoDbContainer {
@@ -218,11 +225,55 @@ class BulkTest extends MongoDbContainer {
         );
     }
 
+    @Test
+    void upsertsAreCounted() throws Exception {
+        var database = newDatabase();
+        try (MongoClient client = getMongoClient()) {
+            client.getDatabase(database).getCollection("upserts").insertOne(new Document("_id", 3).append("c", 0));
+        }
+
+        var output = runBulk(
+            database, "upserts",
+            "{\"updateOne\": {\"filter\": {\"_id\": 1}, \"update\": {\"$set\": {\"a\": 1}}, \"upsert\": true}}",
+            "{\"replaceOne\": {\"filter\": {\"_id\": 2}, \"replacement\": {\"b\": 2}, \"upsert\": true}}",
+            "{\"updateOne\": {\"filter\": {\"_id\": 3}, \"update\": {\"$set\": {\"c\": 3}}, \"upsert\": true}}"
+        );
+
+        assertThat(output.getUpsertedCount(), is(2));
+        assertThat(output.getMatchedCount(), is(1));
+        assertThat(output.getModifiedCount(), is(1));
+        assertThat(output.getInsertedCount(), is(0));
+        assertThat(findAll(database, "upserts"), hasSize(3));
+    }
+
+    @Test
+    void readerStopsOnceAWriteFails() throws Exception {
+        var linesRead = new AtomicInteger();
+        var input = new BufferedReader(new StringReader("{\"insertOne\": {\"document\": {\"a\": 1}}}\n".repeat(1_000))) {
+            @Override
+            public String readLine() throws IOException {
+                linesRead.incrementAndGet();
+                return super.readLine();
+            }
+        };
+
+        // the shape of AbstractLoad.run with a chunk of 2, where the first bulkWrite fails
+        var run = Flux.create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER)
+            .buffer(2)
+            .map(chunk ->
+            {
+                throw new IllegalStateException("bulkWrite failed");
+            });
+
+        assertThrows(IllegalStateException.class, () -> run.count().block());
+        assertThat("only the failed chunk is read", linesRead.get(), is(2));
+    }
+
     private static String newDatabase() {
         return "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
     }
 
-    private void runBulk(String database, String collection, String... lines) throws Exception {
+    private Bulk.Output runBulk(String database, String collection, String... lines) throws Exception {
         URI uri = storageInterface.put(
             TenantService.MAIN_TENANT,
             null,
@@ -230,7 +281,7 @@ class BulkTest extends MongoDbContainer {
             new ByteArrayInputStream((String.join("\n", lines) + "\n").getBytes(StandardCharsets.UTF_8))
         );
 
-        Bulk.builder()
+        return Bulk.builder()
             .connection(
                 MongoDbConnection.builder()
                     .uri(Property.ofValue(connectionUri))
