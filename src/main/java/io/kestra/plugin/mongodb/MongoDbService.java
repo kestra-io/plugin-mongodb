@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.bson.BsonBinarySubType;
 import org.bson.BsonDocument;
 import org.bson.BsonValue;
 
@@ -26,6 +27,40 @@ public abstract class MongoDbService {
         } else {
             throw new IllegalVariableEvaluationException("Invalid value type '" + value.getClass() + "'");
         }
+    }
+
+    public static String toIdString(BsonValue id) {
+        switch (id.getBsonType()) {
+            case OBJECT_ID:
+                return id.asObjectId().getValue().toString();
+            case STRING:
+                return id.asString().getValue();
+            case INT32:
+                return String.valueOf(id.asInt32().getValue());
+            case INT64:
+                return String.valueOf(id.asInt64().getValue());
+            case DOUBLE:
+                return String.valueOf(id.asDouble().getValue());
+            case DECIMAL128:
+                return id.asDecimal128().getValue().toString();
+            case BINARY: {
+                var binary = id.asBinary();
+                // legacy subtype 3 UUIDs use a different byte order in each driver, so only subtype 4 is decoded
+                if (binary.getType() == BsonBinarySubType.UUID_STANDARD.getValue() && binary.getData().length == 16) {
+                    return binary.asUuid().toString();
+                }
+                return toRelaxedJson(id);
+            }
+            default:
+                return toRelaxedJson(id);
+        }
+    }
+
+    // a stable form for any other type, e.g. {"a": 1} or {"$date": "2024-01-01T00:00:00Z"}
+    private static String toRelaxedJson(BsonValue value) {
+        // only a document serializes on its own, so the value is written as a field and the field's JSON is kept
+        var json = new BsonDocument("v", value).toJson();
+        return json.substring(json.indexOf(':') + 1, json.length() - 1).strip();
     }
 
     public static Object map(BsonValue doc) {
