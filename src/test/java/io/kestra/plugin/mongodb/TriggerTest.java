@@ -2,10 +2,7 @@ package io.kestra.plugin.mongodb;
 
 import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 
-import io.kestra.core.junit.annotations.EvaluateTrigger;
 import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,17 +12,9 @@ import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 
+import io.kestra.core.junit.annotations.EvaluateTrigger;
 import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.executions.Execution;
-import io.kestra.core.queues.QueueFactoryInterface;
-import io.kestra.core.queues.QueueInterface;
-import io.kestra.core.repositories.LocalFlowRepositoryLoader;
-import io.kestra.core.utils.TestsUtils;
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import reactor.core.publisher.Flux;
-
-import javax.swing.text.html.Option;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -34,7 +23,11 @@ import static org.hamcrest.Matchers.is;
 public class TriggerTest extends MongoDbContainer {
     @BeforeEach
     void setUp() {
-        // Set up test data for samples.books collection
+        seedBooks();
+    }
+
+    // samples.books as read by the mongo-listen and mongo-listen-store flows
+    static void seedBooks() {
         try (MongoClient client = MongoClients.create(connectionUri)) {
             MongoDatabase database = client.getDatabase("samples");
             MongoCollection<Document> collection = database.getCollection("books");
