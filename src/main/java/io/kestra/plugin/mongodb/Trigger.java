@@ -181,7 +181,8 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         description = """
             Field used to deliver each document only once, such as `updatedAt`, a sequence number or `_id`. A dotted path reaches a nested field.
             When set, the trigger stores the position of the last delivered document in the namespace KV Store and only returns the documents after it, read in the order of this field and then `_id`; `limit` caps how many each poll returns. It can't be combined with `sort` or `skip`.
-            Use a field whose value only increases when a document is added or updated, with a single type across documents: a document written later with a lower value is never returned, and ObjectId `_id` values are only ordered to the second across clients. Documents where the field is missing or null are never returned.
+            Use a field whose value only increases when a document is added or updated, with a single type across documents: a document written later with a lower value is never returned, nor is one whose value has another type than the stored position (a string among dates, for example). ObjectId `_id` values are only ordered to the second across clients. Documents where the field is missing or null are never returned.
+            On a large collection, create an index on the fields `filter` matches by equality, then this field, then `_id` (for example `{status: 1, updatedAt: 1, _id: 1}`), so that each poll doesn't scan and sort the whole collection; `_id` alone needs no extra index.
             When not set, every poll that returns documents starts an execution, including for documents an earlier poll already delivered."""
     )
     @PluginProperty(group = "processing")
@@ -229,13 +230,14 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
                 return Optional.empty();
             }
 
+            var execution = TriggerService.generateExecution(this, conditionContext, context, output);
+
+            // saved once the execution exists, so a poll that can't start one doesn't skip its documents
             if (watermark != null) {
                 watermark.save();
             }
 
-            return Optional.of(
-                TriggerService.generateExecution(this, conditionContext, context, output)
-            );
+            return Optional.of(execution);
         } finally {
             this.cursor = null;
             this.client = null;

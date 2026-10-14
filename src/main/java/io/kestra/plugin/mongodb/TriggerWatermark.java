@@ -30,8 +30,9 @@ import io.kestra.core.storages.kv.KVValueAndMetadata;
  */
 final class TriggerWatermark implements Find.QueryHook {
     private static final String ID = "_id";
-    // canonical Extended JSON keeps the BSON type of the stored value (date, ObjectId, Int64, ...)
-    private static final JsonWriterSettings CANONICAL = JsonWriterSettings.builder().outputMode(JsonMode.EXTENDED).build();
+    // JsonMode.EXTENDED writes canonical Extended JSON (the driver has no CANONICAL mode), which unlike RELAXED
+    // keeps the BSON type of the stored value (date, ObjectId, Int64, ...)
+    private static final JsonWriterSettings EXTENDED_JSON = JsonWriterSettings.builder().outputMode(JsonMode.EXTENDED).build();
 
     private final KVStore kvStore;
     private final String key;
@@ -162,7 +163,7 @@ final class TriggerWatermark implements Find.QueryHook {
             key,
             new KVValueAndMetadata(
                 new KVMetadata("Position of the last document delivered by the MongoDB trigger", (Duration) null),
-                position.toJson(CANONICAL)
+                position.toJson(EXTENDED_JSON)
             )
         );
     }

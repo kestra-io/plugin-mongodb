@@ -8,6 +8,7 @@ import java.util.Optional;
 
 import org.bson.BsonDocument;
 import org.bson.Document;
+import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -18,6 +19,7 @@ import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Updates;
 
 import io.kestra.core.junit.annotations.KestraTest;
+import io.kestra.core.models.conditions.ConditionContext;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.utils.IdUtils;
@@ -88,6 +90,47 @@ class TriggerWatermarkTest extends MongoDbContainer {
     }
 
     @Test
+    void objectIdWatermark() throws Exception {
+        var first = new ObjectId();
+        var second = new ObjectId();
+        insert(new Document("_id", first), new Document("_id", second));
+        var trigger = trigger("_id").build();
+
+        assertThat(poll(trigger), contains(first.toHexString(), second.toHexString()));
+        assertThat(storedPosition(trigger).orElseThrow().getObjectId("value").getValue(), is(second));
+        assertThat(poll(trigger), empty());
+
+        var third = new ObjectId();
+        insert(new Document("_id", third));
+        assertThat(poll(trigger), contains(third.toHexString()));
+    }
+
+    @Test
+    void stringWatermark() throws Exception {
+        insert(new Document("_id", 1).append("updatedAt", isoAt(2)), new Document("_id", 2).append("updatedAt", isoAt(1)));
+        var trigger = trigger("updatedAt").build();
+
+        assertThat(poll(trigger), contains(2, 1));
+        assertThat(storedPosition(trigger).orElseThrow().getString("value").getValue(), is(isoAt(2)));
+        assertThat(poll(trigger), empty());
+
+        insert(new Document("_id", 3).append("updatedAt", isoAt(3)));
+        assertThat(poll(trigger), contains(3));
+    }
+
+    @Test
+    void documentsOfAnotherTypeThanThePositionAreNeverReturned() throws Exception {
+        insert(new Document("_id", 1).append("seq", 1));
+        var trigger = trigger("seq").build();
+        assertThat(poll(trigger), contains(1));
+
+        // strings sort after numbers, but $gt only matches values of the position's type
+        insert(new Document("_id", 2).append("seq", "2"), new Document("_id", 3).append("seq", 3));
+        assertThat(poll(trigger), contains(3));
+        assertThat(poll(trigger), empty());
+    }
+
+    @Test
     void nestedFieldAndDocumentsWithoutAValue() throws Exception {
         insert(
             new Document("_id", 1).append("meta", new Document("updatedAt", at(1))),
@@ -117,18 +160,26 @@ class TriggerWatermarkTest extends MongoDbContainer {
     void positionIsStoredInTheNamespaceKvStore() throws Exception {
         insert(order(1, 1), order(2, 2));
         var trigger = trigger("updatedAt").build();
-        var context = TestsUtils.mockTrigger(runContextFactory, trigger);
 
-        trigger.evaluate(context.getKey(), context.getValue());
+        poll(trigger);
 
-        var key = TriggerWatermark.key(context.getValue().getFlowId(), trigger.getId());
-        var stored = context.getKey().getRunContext().namespaceKv(context.getValue().getNamespace()).getValue(key);
-        assertThat(stored.isPresent(), is(true));
-
-        var position = BsonDocument.parse((String) stored.get().value());
+        var position = storedPosition(trigger).orElseThrow();
         assertThat(position.getString("field").getValue(), is("updatedAt"));
         assertThat(position.getDateTime("value").getValue(), is(at(2).getTime()));
         assertThat(position.getInt32("_id").getValue(), is(2));
+    }
+
+    @Test
+    void positionIsNotSavedWhenTheExecutionCantBeGenerated() throws Exception {
+        insert(order(1, 1));
+        var trigger = trigger("updatedAt").build();
+        var context = mockTrigger(trigger);
+        // TriggerService can't generate an execution without the flow
+        var withoutFlow = ConditionContext.builder().runContext(context.getKey().getRunContext()).build();
+
+        assertThrows(NullPointerException.class, () -> trigger.evaluate(withoutFlow, context.getValue()));
+        assertThat(storedPosition(trigger).isPresent(), is(false));
+        assertThat(poll(trigger), contains(1));
     }
 
     @Test
@@ -175,8 +226,13 @@ class TriggerWatermarkTest extends MongoDbContainer {
     }
 
     private Optional<Execution> evaluate(Trigger trigger) throws Exception {
-        var context = TestsUtils.mockTrigger(runContextFactory, trigger);
+        var context = mockTrigger(trigger);
         return trigger.evaluate(context.getKey(), context.getValue());
+    }
+
+    // TestsUtils.mockTrigger names the flow after its caller, so every call goes through here to share one flow and KV key
+    private Map.Entry<ConditionContext, io.kestra.core.models.triggers.Trigger> mockTrigger(Trigger trigger) {
+        return TestsUtils.mockTrigger(runContextFactory, trigger);
     }
 
     // the _id of each delivered row, in delivery order
@@ -185,6 +241,13 @@ class TriggerWatermarkTest extends MongoDbContainer {
         return evaluate(trigger)
             .map(execution -> ((List<Map<String, Object>>) execution.getTrigger().getVariables().get("rows")).stream().map(row -> row.get("_id")).toList())
             .orElse(List.of());
+    }
+
+    private Optional<BsonDocument> storedPosition(Trigger trigger) throws Exception {
+        var context = mockTrigger(trigger);
+        var key = TriggerWatermark.key(context.getValue().getFlowId(), trigger.getId());
+        return context.getKey().getRunContext().namespaceKv(context.getValue().getNamespace()).getValue(key)
+            .map(stored -> BsonDocument.parse((String) stored.value()));
     }
 
     private void insert(Document... documents) {
@@ -203,5 +266,9 @@ class TriggerWatermarkTest extends MongoDbContainer {
 
     private static Date at(int minute) {
         return Date.from(Instant.parse("2026-01-01T00:00:00Z").plusSeconds(60L * minute));
+    }
+
+    private static String isoAt(int minute) {
+        return at(minute).toInstant().toString();
     }
 }
