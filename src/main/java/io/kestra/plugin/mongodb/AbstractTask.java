@@ -1,5 +1,6 @@
 package io.kestra.plugin.mongodb;
 
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.bson.conversions.Bson;
@@ -60,8 +61,15 @@ public abstract class AbstractTask extends Task implements WorkerJobLifecycle {
     @ToString.Exclude
     private final transient AtomicReference<Runnable> killAction = new AtomicReference<>();
 
+    @Getter(AccessLevel.NONE)
+    @EqualsAndHashCode.Exclude
+    @ToString.Exclude
+    private final transient AtomicBoolean isKilled = new AtomicBoolean();
+
     /**
      * Creates the client of this run, and registers how {@link #kill()} stops its operations.
+     *
+     * @throws IllegalStateException if the task was killed before its client was created
      */
     protected MongoClient client(RunContext runContext) throws IllegalVariableEvaluationException {
         MongoDbSessionKiller sessionKiller = new MongoDbSessionKiller(this.connection.settings(runContext));
@@ -71,6 +79,13 @@ public abstract class AbstractTask extends Task implements WorkerJobLifecycle {
             closeQuietly(mongoClient);
             sessionKiller.killSessions();
         });
+
+        // checked after registering, so a concurrent kill() either takes the action or is seen here
+        if (this.isKilled.get()) {
+            this.killAction.set(null);
+            closeQuietly(mongoClient);
+            throw new IllegalStateException("The task was killed before its MongoDB client was created.");
+        }
         return mongoClient;
     }
 
@@ -84,12 +99,18 @@ public abstract class AbstractTask extends Task implements WorkerJobLifecycle {
      * sessions is not possible.
      *
      * <p>
+     * A kill that arrives before the client exists makes {@link #client(RunContext)} fail, so the run does not start.
+     *
+     * <p>
      * Only the first call does anything. A server that never answers can hold that daemon thread, which never keeps
      * JVM shutdown alive.
      */
     @Override
     public void kill() {
-        // taking the action makes repeated or racing kills no-ops
+        if (!this.isKilled.compareAndSet(false, true)) {
+            return;
+        }
+
         Runnable action = this.killAction.getAndSet(null);
         if (action == null) {
             return;

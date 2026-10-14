@@ -87,6 +87,7 @@ final class MongoDbSessionKiller implements CommandListener {
         try (MongoClient killer = MongoClients.create(this.settings)) {
             killer.getDatabase("admin").runCommand(new BsonDocument("killSessions", new BsonArray(ids)));
         } catch (Exception e) {
+            log.warn("Could not kill the MongoDB sessions of a killed task or trigger, so its operation may still be running on the server: {}", e.getMessage());
             log.debug("Failed to kill MongoDB sessions during kill()", e);
             // killing sessions is best-effort, never fail kill()
         }

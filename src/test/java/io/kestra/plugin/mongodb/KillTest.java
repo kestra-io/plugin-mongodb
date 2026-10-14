@@ -73,15 +73,19 @@ class KillTest extends MongoDbContainer {
     }
 
     @Test
-    void killBeforeRunDoesNothing() {
+    void killBeforeRunStopsTheRun() {
         Find find = Find.builder()
             .id("find")
             .type(Find.class.getName())
             .connection(connection())
+            .database(Property.ofValue("kill"))
+            .collection(Property.ofValue(COLLECTION))
             .build();
 
         find.kill();
         find.kill();
+
+        assertThrows(IllegalStateException.class, () -> find.run(runContextFactory.of()));
     }
 
     @Test
