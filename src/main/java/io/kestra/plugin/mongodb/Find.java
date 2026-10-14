@@ -41,7 +41,7 @@ import reactor.core.publisher.Flux;
     description = """
         Executes find on a collection with optional projection, sort, skip, and limit. Filter/projection/sort accept BSON strings or maps rendered from Flow variables. Results are fetched in-memory by default or stored as Ion in internal storage when `store` is true.
 
-        Decimal128 values are returned as exact decimals. Values with no JSON equivalent (Timestamp, regular expression, MinKey, MaxKey, JavaScript, DBPointer) are returned as [MongoDB Extended JSON](https://www.mongodb.com/docs/manual/reference/mongodb-extended-json/) objects, such as `{"$timestamp": {"t": 1700000000, "i": 7}}`, which `Load` writes back as the same type. Deprecated Symbol and Undefined values are returned as a string and null."""
+        Decimal128 values are read as exact decimals, which stored results keep; in `rows` the execution outputs can show them as doubles, so store the results when the exact value matters. Values with no JSON equivalent (Timestamp, regular expression, MinKey, MaxKey, JavaScript, DBPointer) are returned as [MongoDB Extended JSON](https://www.mongodb.com/docs/manual/reference/mongodb-extended-json/) objects, such as `{"$timestamp": {"t": 1700000000, "i": 7}}`, which `Load` writes back as the same type. Deprecated Symbol and Undefined values are returned as a string and null."""
 )
 @Plugin(
     examples = {

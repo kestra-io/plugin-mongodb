@@ -134,7 +134,7 @@ class BsonTypesTest extends MongoDbContainer {
         var stored = find(runContext, true).getUri();
 
         Load.builder()
-            .id("load")
+            .id(IdUtils.create())
             .type(Load.class.getName())
             .connection(connection())
             .database(Property.ofValue(this.database))
@@ -194,7 +194,7 @@ class BsonTypesTest extends MongoDbContainer {
 
     private Find.Output find(RunContext runContext, boolean store) throws Exception {
         return Find.builder()
-            .id("find")
+            .id(IdUtils.create())
             .type(Find.class.getName())
             .connection(connection())
             .database(Property.ofValue(this.database))
@@ -206,7 +206,7 @@ class BsonTypesTest extends MongoDbContainer {
 
     private Aggregate.Output aggregate(RunContext runContext, FetchType store) throws Exception {
         return Aggregate.builder()
-            .id("aggregate")
+            .id(IdUtils.create())
             .type(Aggregate.class.getName())
             .connection(connection())
             .database(Property.ofValue(this.database))
