@@ -8,6 +8,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.StringReader;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -19,17 +21,24 @@ import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
+import com.mongodb.MongoBulkWriteException;
+import com.mongodb.MongoSocketReadException;
+import com.mongodb.ServerAddress;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
 
+import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.property.Property;
+import io.kestra.core.models.tasks.RunnableTaskException;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.storages.StorageInterface;
 import io.kestra.core.tenant.TenantService;
 import io.kestra.core.utils.IdUtils;
 
 import jakarta.inject.Inject;
+import lombok.experimental.SuperBuilder;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 
@@ -38,6 +47,7 @@ import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.startsWith;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @KestraTest
@@ -269,17 +279,115 @@ class BulkTest extends MongoDbContainer {
         assertThat("only the failed chunk is read", linesRead.get(), is(2));
     }
 
+    @Test
+    void failedOperationReportsItsNumberAndWhatWasApplied() throws Exception {
+        var database = newDatabase();
+        var runContext = runContextFactory.of();
+        var bulk = Bulk.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("failing"))
+            .from(Property.ofValue(store(
+                "{\"updateOne\": {\"filter\": {\"_id\": 1}, \"update\": {\"$set\": {\"a\": 1}}, \"upsert\": true}}",
+                "{\"updateOne\": {\"filter\": {\"_id\": 2}, \"update\": {\"$set\": {\"a\": 2}}, \"upsert\": true}}",
+                "{\"insertOne\": {\"document\": {\"_id\": 3}}}",
+                "{\"insertOne\": {\"document\": {\"_id\": 1}}}",
+                "{\"insertOne\": {\"document\": {\"_id\": 5}}}"
+            ).toString()))
+            .chunk(Property.ofValue(2))
+            .build();
+
+        var e = assertThrows(RunnableTaskException.class, () -> bulk.run(runContext));
+
+        assertThat(e.getMessage(), startsWith("Record 4 failed (3 records applied before it): E11000 duplicate key error"));
+        assertThat(e.getCause(), instanceOf(MongoBulkWriteException.class));
+        var output = (Bulk.Output) e.getOutput();
+        assertThat(output.getSize(), is(3L));
+        assertThat(output.getUpsertedCount(), is(2));
+        assertThat(output.getInsertedCount(), is(1));
+        assertThat(metric(runContext, "records"), is(3D));
+        assertThat(metric(runContext, "requests.count"), is(2D));
+        assertThat(findAll(database, "failing").stream().map(document -> document.get("_id")).toList(), containsInAnyOrder(1, 2, 3));
+    }
+
+    @Test
+    void writeWithoutAResultLeavesItsChunkUnknown() throws Exception {
+        var database = newDatabase();
+        var runContext = runContextFactory.of();
+        var bulk = Bulk.builder()
+            .connection(SecondWriteFailsConnection.builder().uri(Property.ofValue(connectionUri)).build())
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("unknown"))
+            .from(Property.ofValue(store(
+                "{\"insertOne\": {\"document\": {\"_id\": 1}}}",
+                "{\"insertOne\": {\"document\": {\"_id\": 2}}}",
+                "{\"insertOne\": {\"document\": {\"_id\": 3}}}",
+                "{\"insertOne\": {\"document\": {\"_id\": 4}}}",
+                "{\"insertOne\": {\"document\": {\"_id\": 5}}}"
+            ).toString()))
+            .chunk(Property.ofValue(2))
+            .build();
+
+        var e = assertThrows(RunnableTaskException.class, () -> bulk.run(runContext));
+
+        assertThat(
+            e.getMessage(),
+            is("The chunk of records 3 to 4 failed and MongoDB returned no result, so it's unknown which of its records were applied (2 records applied before it): connection reset")
+        );
+        assertThat(e.getCause(), instanceOf(MongoSocketReadException.class));
+        var output = (Bulk.Output) e.getOutput();
+        assertThat(output.getSize(), is(2L));
+        assertThat(output.getInsertedCount(), is(2));
+        assertThat(metric(runContext, "records"), is(2D));
+        assertThat(metric(runContext, "requests.count"), is(2D));
+    }
+
+    // its client fails the second bulkWrite like a dropped connection, which leaves no write result; a subclass of
+    // Bulk would be registered as a plugin by the annotation processor, so the connection is overridden instead
+    @SuperBuilder
+    private static class SecondWriteFailsConnection extends MongoDbConnection {
+        @Override
+        MongoClient client(RunContext runContext) throws IllegalVariableEvaluationException {
+            return failSecondWrite(super.client(runContext), MongoClient.class, new AtomicInteger());
+        }
+
+        // proxies the client, and the databases and collections it returns, down to bulkWrite
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        private static <T> T failSecondWrite(T target, Class<T> type, AtomicInteger writes) {
+            return type.cast(Proxy.newProxyInstance(
+                type.getClassLoader(),
+                new Class<?>[] {type},
+                (proxy, method, args) ->
+                {
+                    if (method.getName().equals("bulkWrite") && writes.incrementAndGet() == 2) {
+                        throw new MongoSocketReadException("connection reset", new ServerAddress());
+                    }
+
+                    Object result;
+                    try {
+                        result = method.invoke(target, args);
+                    } catch (InvocationTargetException e) {
+                        throw e.getCause();
+                    }
+
+                    if (result instanceof MongoDatabase database) {
+                        return failSecondWrite(database, MongoDatabase.class, writes);
+                    }
+                    if (result instanceof MongoCollection collection) {
+                        return failSecondWrite(collection, (Class) MongoCollection.class, writes);
+                    }
+                    return result;
+                }
+            ));
+        }
+    }
+
     private static String newDatabase() {
         return "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
     }
 
     private Bulk.Output runBulk(String database, String collection, String... lines) throws Exception {
-        URI uri = storageInterface.put(
-            TenantService.MAIN_TENANT,
-            null,
-            URI.create("/" + IdUtils.create() + ".ion"),
-            new ByteArrayInputStream((String.join("\n", lines) + "\n").getBytes(StandardCharsets.UTF_8))
-        );
+        URI uri = store(lines);
 
         return Bulk.builder()
             .connection(
@@ -292,6 +400,19 @@ class BulkTest extends MongoDbContainer {
             .from(Property.ofValue(uri.toString()))
             .build()
             .run(runContextFactory.of());
+    }
+
+    private URI store(String... lines) throws Exception {
+        return storageInterface.put(
+            TenantService.MAIN_TENANT,
+            null,
+            URI.create("/" + IdUtils.create() + ".ion"),
+            new ByteArrayInputStream((String.join("\n", lines) + "\n").getBytes(StandardCharsets.UTF_8))
+        );
+    }
+
+    private static Double metric(RunContext runContext, String name) {
+        return (Double) runContext.metrics().stream().filter(e -> e.getName().equals(name)).findFirst().orElseThrow().getValue();
     }
 
     private static List<Document> findAll(String database, String collection) {
