@@ -3,6 +3,7 @@ package io.kestra.plugin.mongodb;
 import java.util.Map;
 import java.util.Optional;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import io.kestra.core.junit.annotations.EvaluateTrigger;
@@ -17,14 +18,17 @@ import static org.hamcrest.Matchers.*;
  *
  * <p>
  * This covers the {@code store=true} output contract (result URI and size in
- * internal storage, no in-memory rows). It reads the same shared
- * {@code samples.books} dataset as {@link TriggerTest}, so it needs the same
- * CI infrastructure (MongoDB on {@code localhost:27017} seeded by
- * {@code setup-unit.sh}). It is not kill wiring coverage: see
- * {@link TriggerEvaluateKillTest} for kill-during-fetch behavior.
+ * internal storage, no in-memory rows). It reads the same {@code samples.books}
+ * documents as {@link TriggerTest}, seeded in the test container. It is not kill
+ * wiring coverage: see {@link TriggerEvaluateKillTest} for kill-during-fetch behavior.
  */
 @KestraTest(startRunner = true, startScheduler = true)
 public class TriggerStoreTest extends MongoDbContainer {
+    @BeforeEach
+    void setUp() {
+        TriggerTest.seedBooks();
+    }
+
     @Test
     @EvaluateTrigger(flow = "flows/mongo-listen-store.yml", triggerId = "watch-store")
     void run(Optional<Execution> optionalExecution) {

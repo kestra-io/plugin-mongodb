@@ -19,9 +19,7 @@ Single-module plugin. Source packages under `io.kestra.plugin`:
 
 - `mongodb`
 
-Infrastructure dependencies (Docker Compose services):
-
-- `mongo`
+Infrastructure dependencies: tests start MongoDB with Testcontainers (`mongo:8.0`), so no Docker Compose service is needed.
 
 ### Key Plugin Classes
 

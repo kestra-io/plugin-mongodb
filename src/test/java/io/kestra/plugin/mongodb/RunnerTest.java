@@ -1,8 +1,11 @@
 package io.kestra.plugin.mongodb;
 
+import java.io.BufferedInputStream;
+import java.net.URI;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 
 import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,18 +20,26 @@ import io.kestra.core.junit.annotations.ExecuteFlow;
 import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.flows.State;
+import io.kestra.core.serializers.FileSerde;
+import io.kestra.core.storages.StorageInterface;
+import io.kestra.core.tenant.TenantService;
+
+import jakarta.inject.Inject;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.closeTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 
 /**
  * Runner test for MongoDB Aggregate task.
- * This test validates that the Aggregate task configuration can be parsed
- * and executed successfully as part of a Kestra flow.
+ * This test runs the Aggregate flows against the test container and checks
+ * the aggregation results computed from the data seeded below.
  */
 @KestraTest(startRunner = true)
 class RunnerTest extends MongoDbContainer {
+    @Inject
+    private StorageInterface storageInterface;
 
     @BeforeEach
     void setupTestData() {
@@ -194,10 +205,20 @@ class RunnerTest extends MongoDbContainer {
                 Arrays.asList(
                     new Document("_id", 1)
                         .append("name", "Test Document 1")
-                        .append("value", 100),
+                        .append("status", "active")
+                        .append("category", "A"),
                     new Document("_id", 2)
                         .append("name", "Test Document 2")
-                        .append("value", 200)
+                        .append("status", "active")
+                        .append("category", "A"),
+                    new Document("_id", 3)
+                        .append("name", "Test Document 3")
+                        .append("status", "active")
+                        .append("category", "B"),
+                    new Document("_id", 4)
+                        .append("name", "Test Document 4")
+                        .append("status", "inactive")
+                        .append("category", "B")
                 )
             );
         }
@@ -213,6 +234,9 @@ class RunnerTest extends MongoDbContainer {
     void aggregateSimple(Execution execution) {
         assertThat(execution.getTaskRunList(), hasSize(1));
         assertThat(execution.getState().getCurrent(), is(State.Type.SUCCESS));
+
+        // active documents counted by category: A has 2, B has 1
+        assertThat(rows(execution, "simple_aggregate"), is(List.of(Map.of("_id", "A", "count", 2), Map.of("_id", "B", "count", 1))));
     }
 
     /**
@@ -229,8 +253,43 @@ class RunnerTest extends MongoDbContainer {
      */
     @Test
     @ExecuteFlow("flows/mongo-aggregate-example.yml")
-    void mongoAggregateExample(Execution execution) {
+    void mongoAggregateExample(Execution execution) throws Exception {
         assertThat(execution.getTaskRunList(), hasSize(3));
         assertThat(execution.getState().getCurrent(), is(State.Type.SUCCESS));
+
+        // completed transactions by category, highest total first
+        var sales = rows(execution, "sales_by_category");
+        assertThat(sales.stream().map(row -> row.get("_id")).toList(), is(List.of("Electronics", "Home & Garden", "Sports", "Clothing", "Books")));
+        assertThat(((Number) sales.getFirst().get("totalAmount")).doubleValue(), closeTo(1399.97, 0.001));
+        assertThat(((Number) sales.getFirst().get("averageAmount")).doubleValue(), closeTo(466.6567, 0.001));
+        assertThat(sales.getFirst().get("transactionCount"), is(3));
+
+        // stored: spending and segment per user
+        var outputs = execution.findTaskRunsByTaskId("user_analytics").getFirst().getOutputs();
+        assertThat(((Number) outputs.get("size")).longValue(), is(3L));
+        Map<Object, Map<String, Object>> users;
+        try (var inputStream = new BufferedInputStream(storageInterface.get(TenantService.MAIN_TENANT, execution.getNamespace(), URI.create((String) outputs.get("uri"))))) {
+            users = FileSerde.readAll(inputStream)
+                .map(row -> (Map<String, Object>) row)
+                .collectMap(row -> row.get("name"))
+                .block();
+        }
+        assertThat(((Number) users.get("John Doe").get("totalSpent")).doubleValue(), closeTo(850.0, 0.001));
+        assertThat(users.get("John Doe").get("totalOrders"), is(3));
+        assertThat(((Number) users.get("John Doe").get("avgRating")).doubleValue(), closeTo(4.75, 0.001));
+        assertThat(users.get("John Doe").get("customerSegment"), is("Gold"));
+        assertThat(users.get("Jane Smith").get("customerSegment"), is("Gold"));
+        assertThat(users.get("Bob Johnson").get("customerSegment"), is("Premium"));
+
+        // revenue per month of 2024
+        var revenue = rows(execution, "monthly_revenue_report");
+        assertThat(revenue.stream().map(row -> row.get("_id")).toList(), is(List.of(Map.of("year", 2024, "month", 1), Map.of("year", 2024, "month", 2), Map.of("year", 2024, "month", 3))));
+        assertThat(revenue.stream().map(row -> ((Number) row.get("revenue")).doubleValue()).toList(), is(List.of(3500.0, 2000.0, 4800.0)));
+        assertThat(revenue.stream().map(row -> row.get("uniqueCustomerCount")).toList(), is(List.of(2, 2, 2)));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> rows(Execution execution, String taskId) {
+        return (List<Map<String, Object>>) execution.findTaskRunsByTaskId(taskId).getFirst().getOutputs().get("rows");
     }
 }
