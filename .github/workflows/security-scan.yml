@@ -1,0 +1,28 @@
+name: Security scan
+
+# Side-effect-free security scan (TruffleHog, OpenGrep), dispatched by the security controller tower
+# (Kestra). Identical in every kestra-io repository: all the logic and the schema of `params` live in
+# kestra-io/actions/.github/workflows/security-scan.yml, so this file never needs to change.
+# No schedule here on purpose: the tower owns the cadence.
+
+run-name: security-scan ${{ fromJSON(inputs.params).request_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      params:
+        description: 'JSON object, e.g. {"v":1,"request_id":"<kestra execution id>","scanners":"trufflehog,opengrep"}'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  scan:
+    uses: kestra-io/actions/.github/workflows/security-scan.yml@main
+    with:
+      params: ${{ inputs.params }}
+    secrets: inherit
