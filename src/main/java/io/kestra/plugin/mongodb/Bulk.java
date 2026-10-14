@@ -94,7 +94,8 @@ public class Bulk extends AbstractLoad {
         {
             String row;
 
-            while ((row = input.readLine()) != null) {
+            // stop reading once downstream cancelled, after a failed bulkWrite or a killed task
+            while (!s.isCancelled() && (row = input.readLine()) != null) {
                 BsonDocument bsonDocument = BsonDocument.parse(row);
                 Map.Entry<String, BsonValue> operation = bsonDocument.entrySet().iterator().next();
 
