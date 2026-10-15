@@ -1,12 +1,15 @@
 package io.kestra.plugin.mongodb;
 
 import java.net.URI;
+import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import org.bson.BsonArray;
+import org.bson.BsonDateTime;
 import org.bson.BsonDbPointer;
 import org.bson.BsonDecimal128;
 import org.bson.BsonDocument;
@@ -15,7 +18,9 @@ import org.bson.BsonJavaScript;
 import org.bson.BsonJavaScriptWithScope;
 import org.bson.BsonMaxKey;
 import org.bson.BsonMinKey;
+import org.bson.BsonObjectId;
 import org.bson.BsonRegularExpression;
+import org.bson.BsonString;
 import org.bson.BsonSymbol;
 import org.bson.BsonTimestamp;
 import org.bson.BsonUndefined;
@@ -53,6 +58,10 @@ class BsonTypesTest extends MongoDbContainer {
     // JSON of the value every read path must return, with ' for "
     private static final Map<String, String> EXPECTED = expected();
 
+    // ObjectId and date values inside a JavaScript scope
+    private static final BsonDocument SCOPE = new BsonDocument("id", new BsonObjectId(new ObjectId("60930c39a982931c20ef6cd6")))
+        .append("at", new BsonDateTime(Instant.parse("2024-01-01T10:00:00Z").toEpochMilli()));
+
     private String database;
 
     @BeforeEach
@@ -67,14 +76,18 @@ class BsonTypesTest extends MongoDbContainer {
                     .append("decimalFraction", new BsonDecimal128(Decimal128.parse("0.10")))
                     .append("decimalNaN", new BsonDecimal128(Decimal128.NaN))
                     .append("decimalNegativeZero", new BsonDecimal128(Decimal128.NEGATIVE_ZERO))
+                    .append("decimalInfinity", new BsonDecimal128(Decimal128.POSITIVE_INFINITY))
                     .append("regex", new BsonRegularExpression("^ab+c$", "i"))
                     .append("minKey", new BsonMinKey())
                     .append("maxKey", new BsonMaxKey())
                     .append("code", new BsonJavaScript("function(){return 1;}"))
                     .append("codeWithScope", new BsonJavaScriptWithScope("function(){return x;}", new BsonDocument("x", new BsonInt32(1))))
+                    .append("codeWithScopeValues", new BsonJavaScriptWithScope("function(){return id;}", SCOPE))
                     .append("dbPointer", new BsonDbPointer("db.coll", new ObjectId("60930c39a982931c20ef6cd6")))
                     .append("symbol", new BsonSymbol("sym"))
                     .append("undefined", new BsonUndefined())
+                    .append("nested", new BsonDocument("timestamp", new BsonTimestamp(1_700_000_000, 7)).append("decimal", new BsonDecimal128(Decimal128.parse("0.10"))))
+                    .append("array", new BsonArray(List.of(new BsonTimestamp(1_700_000_000, 7), new BsonRegularExpression("^ab+c$", "i"))))
             );
         }
     }
@@ -146,9 +159,15 @@ class BsonTypesTest extends MongoDbContainer {
         try (MongoClient client = getMongoClient()) {
             var original = client.getDatabase(this.database).getCollection(COLLECTION, BsonDocument.class).find().first();
             var copy = client.getDatabase(this.database).getCollection("copy", BsonDocument.class).find().first();
-            for (var field : List.of("timestamp", "timestampAfter2038", "decimal", "decimalFraction", "regex", "minKey", "maxKey", "code", "codeWithScope", "dbPointer")) {
+            for (var field : List.of("timestamp", "timestampAfter2038", "decimal", "decimalFraction", "regex", "minKey", "maxKey", "code", "codeWithScope", "dbPointer", "nested", "array")) {
                 assertThat(field, copy.get(field), is(original.get(field)));
             }
+
+            // documented: values inside a JavaScript scope are read like any other field, so they come back as strings
+            assertThat(
+                copy.get("codeWithScopeValues").asJavaScriptWithScope().getScope(),
+                is(new BsonDocument("id", new BsonString("60930c39a982931c20ef6cd6")).append("at", new BsonString("2024-01-01T10:00:00Z")))
+            );
         }
     }
 
@@ -160,14 +179,18 @@ class BsonTypesTest extends MongoDbContainer {
         expected.put("decimalFraction", "0.10");
         expected.put("decimalNaN", "'NaN'");
         expected.put("decimalNegativeZero", "-0.0");
+        expected.put("decimalInfinity", "'Infinity'");
         expected.put("regex", "{'$regularExpression':{'pattern':'^ab+c$','options':'i'}}");
         expected.put("minKey", "{'$minKey':1}");
         expected.put("maxKey", "{'$maxKey':1}");
         expected.put("code", "{'$code':'function(){return 1;}'}");
         expected.put("codeWithScope", "{'$code':'function(){return x;}','$scope':{'x':1}}");
+        expected.put("codeWithScopeValues", "{'$code':'function(){return id;}','$scope':{'id':'60930c39a982931c20ef6cd6','at':'2024-01-01T10:00:00Z'}}");
         expected.put("dbPointer", "{'$dbPointer':{'$ref':'db.coll','$id':{'$oid':'60930c39a982931c20ef6cd6'}}}");
         expected.put("symbol", "'sym'");
         expected.put("undefined", "null");
+        expected.put("nested", "{'timestamp':{'$timestamp':{'t':1700000000,'i':7}},'decimal':0.10}");
+        expected.put("array", "[{'$timestamp':{'t':1700000000,'i':7}},{'$regularExpression':{'pattern':'^ab+c$','options':'i'}}]");
         return expected;
     }
 

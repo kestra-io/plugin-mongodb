@@ -33,7 +33,7 @@ import lombok.experimental.SuperBuilder;
     description = """
         Periodically runs a MongoDB find; if results are non-empty, starts a Flow with the rows or stored file. Uses Find task behavior (filter/projection/sort/limit/skip). Default interval is 60s and store is false, returning rows in trigger output.
 
-        Decimal128 values are read as exact decimals, which stored results keep; in `rows` the execution outputs can show them as doubles, so store the results when the exact value matters. Values with no JSON equivalent (Timestamp, regular expression, MinKey, MaxKey, JavaScript, DBPointer) are returned as [MongoDB Extended JSON](https://www.mongodb.com/docs/manual/reference/mongodb-extended-json/) objects, such as `{"$timestamp": {"t": 1700000000, "i": 7}}`, which `Load` writes back as the same type. Deprecated Symbol and Undefined values are returned as a string and null."""
+        Decimal128 values are read as exact decimals, which stored results keep; in `rows` the execution outputs can show them as doubles, so store the results when the exact value matters. Decimal128 NaN, infinities and negative zero have no exact decimal form and are returned as doubles. Values with no JSON equivalent (Timestamp, regular expression, MinKey, MaxKey, JavaScript, DBPointer) are returned as [MongoDB Extended JSON](https://www.mongodb.com/docs/manual/reference/mongodb-extended-json/) objects, such as `{"$timestamp": {"t": 1700000000, "i": 7}}`, which `Load` writes back as the same type. Values inside the scope of JavaScript with scope are read like any other field, so `Load` writes an ObjectId or a date there back as a string. Deprecated Symbol and Undefined values are returned as a string and null."""
 )
 @Plugin(
     examples = {
