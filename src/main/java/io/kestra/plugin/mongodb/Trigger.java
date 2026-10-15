@@ -177,7 +177,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
             .store(this.store)
             .build();
 
-        MongoDbSessionKiller mongoSessionKiller = new MongoDbSessionKiller(this.connection.settings(runContext));
+        MongoDbSessionKiller mongoSessionKiller = new MongoDbSessionKiller(this.connection.clientSettings(runContext));
         MongoClient mongoClient = mongoSessionKiller.client();
         this.sessionKiller = mongoSessionKiller;
         this.client = mongoClient;

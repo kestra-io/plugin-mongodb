@@ -230,7 +230,7 @@ class KillTest extends MongoDbContainer {
         awaitOperation(database);
 
         // killSessions with an empty array would kill every session of the user, including the one running above
-        MongoDbSessionKiller sessionKiller = new MongoDbSessionKiller(connection().settings(runContextFactory.of()));
+        MongoDbSessionKiller sessionKiller = new MongoDbSessionKiller(connection().clientSettings(runContextFactory.of()));
         try (MongoClient unused = sessionKiller.client()) {
             sessionKiller.killSessions();
         }

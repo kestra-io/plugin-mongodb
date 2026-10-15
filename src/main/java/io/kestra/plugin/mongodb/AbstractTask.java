@@ -72,7 +72,7 @@ public abstract class AbstractTask extends Task implements WorkerJobLifecycle {
      * @throws IllegalStateException if the task was killed before its client was created
      */
     protected MongoClient client(RunContext runContext) throws IllegalVariableEvaluationException {
-        MongoDbSessionKiller sessionKiller = new MongoDbSessionKiller(this.connection.settings(runContext));
+        MongoDbSessionKiller sessionKiller = new MongoDbSessionKiller(this.connection.clientSettings(runContext));
         MongoClient mongoClient = sessionKiller.client();
         this.killAction.set(() ->
         {

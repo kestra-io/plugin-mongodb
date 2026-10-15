@@ -28,7 +28,7 @@ public class MongoDbConnection {
     @PluginProperty(secret = true)
     private Property<@NotEmpty String> uri;
 
-    MongoClientSettings settings(RunContext runContext) throws IllegalVariableEvaluationException {
+    MongoClientSettings clientSettings(RunContext runContext) throws IllegalVariableEvaluationException {
         return MongoClientSettings.builder()
             .applyConnectionString(new ConnectionString(runContext.render(uri).as(String.class).orElseThrow()))
             .build();
