@@ -142,7 +142,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         try (MongoClient client = this.connection.client(runContext)) {
             return run(runContext, client, mongoCursor ->
             {
-            });
+            }, QueryHook.NONE);
         }
     }
 
@@ -154,13 +154,17 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
      * the query logic. Publishing the cursor enables best-effort cleanup: closing it requests driver
      * teardown of the cursor, but an already in-flight getMore()/network read may continue until it returns;
      * this does not guarantee interruption of a genuinely wedged server or network read.
+     *
+     * <p>
+     * {@code queryHook} receives the rendered filter and sort and every returned document, so the trigger can
+     * apply its watermark without rendering anything a second time.
      */
-    Output run(RunContext runContext, MongoClient client, Consumer<MongoCursor<BsonDocument>> cursorListener) throws Exception {
+    Output run(RunContext runContext, MongoClient client, Consumer<MongoCursor<BsonDocument>> cursorListener, QueryHook queryHook) throws Exception {
         Logger logger = runContext.logger();
 
         MongoCollection<BsonDocument> collection = this.collection(runContext, client, BsonDocument.class);
 
-        BsonDocument bsonFilter = MongoDbService.toDocument(runContext, this.filter);
+        BsonDocument bsonFilter = queryHook.filter(MongoDbService.toDocument(runContext, this.filter));
         logger.debug("Find: {}", bsonFilter);
 
         FindIterable<BsonDocument> find = collection.find(bsonFilter);
@@ -169,8 +173,9 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
             find.projection(MongoDbService.toDocument(runContext, this.projection));
         }
 
-        if (this.sort != null) {
-            find.sort(MongoDbService.toDocument(runContext, this.sort));
+        var bsonSort = queryHook.sort(this.sort != null ? MongoDbService.toDocument(runContext, this.sort) : null);
+        if (bsonSort != null) {
+            find.sort(bsonSort);
         }
 
         if (runContext.render(this.limit).as(Integer.class).isPresent()) {
@@ -184,13 +189,13 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         Output.OutputBuilder builder = Output.builder();
 
         if (runContext.render(this.store).as(Boolean.class).orElseThrow()) {
-            Pair<URI, Long> store = this.store(runContext, find, cursorListener);
+            Pair<URI, Long> store = this.store(runContext, find, cursorListener, queryHook);
 
             builder
                 .uri(store.getLeft())
                 .size(store.getRight());
         } else {
-            Pair<ArrayList<Object>, Long> fetch = this.fetch(find, cursorListener);
+            Pair<ArrayList<Object>, Long> fetch = this.fetch(find, cursorListener, queryHook);
 
             builder
                 .rows(fetch.getLeft())
@@ -211,7 +216,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         return output;
     }
 
-    private Pair<URI, Long> store(RunContext runContext, FindIterable<BsonDocument> documents, Consumer<MongoCursor<BsonDocument>> cursorListener) throws IOException {
+    private Pair<URI, Long> store(RunContext runContext, FindIterable<BsonDocument> documents, Consumer<MongoCursor<BsonDocument>> cursorListener, QueryHook queryHook) throws IOException {
         File tempFile = runContext.workingDir().createTempFile(".ion").toFile();
 
         try (
@@ -220,7 +225,11 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         ) {
             cursorListener.accept(mongoCursor);
             var flux = Flux.fromIterable((Iterable<BsonDocument>) () -> mongoCursor)
-                .map(document -> MongoDbService.map(document.toBsonDocument()));
+                .map(document ->
+                {
+                    queryHook.document(document);
+                    return MongoDbService.map(document.toBsonDocument());
+                });
             Long count = FileSerde.writeAll(output, flux).block();
 
             return Pair.of(
@@ -230,7 +239,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         }
     }
 
-    private Pair<ArrayList<Object>, Long> fetch(FindIterable<BsonDocument> documents, Consumer<MongoCursor<BsonDocument>> cursorListener) {
+    private Pair<ArrayList<Object>, Long> fetch(FindIterable<BsonDocument> documents, Consumer<MongoCursor<BsonDocument>> cursorListener, QueryHook queryHook) {
         ArrayList<Object> result = new ArrayList<>();
         AtomicLong count = new AtomicLong();
 
@@ -238,6 +247,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
             cursorListener.accept(mongoCursor);
             while (mongoCursor.hasNext()) {
                 BsonDocument bsonDocument = mongoCursor.next();
+                queryHook.document(bsonDocument);
                 count.incrementAndGet();
                 result.add(MongoDbService.map(bsonDocument.toBsonDocument()));
             }
@@ -247,6 +257,26 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
             result,
             count.get()
         );
+    }
+
+    /**
+     * Lets a caller narrow the rendered query and see each returned document before it is mapped.
+     */
+    interface QueryHook {
+        QueryHook NONE = new QueryHook() {
+        };
+
+        default BsonDocument filter(BsonDocument filter) {
+            return filter;
+        }
+
+        // null means no sort
+        default BsonDocument sort(BsonDocument sort) {
+            return sort;
+        }
+
+        default void document(BsonDocument document) {
+        }
     }
 
     @Builder

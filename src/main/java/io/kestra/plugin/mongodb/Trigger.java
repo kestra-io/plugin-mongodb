@@ -33,6 +33,8 @@ import lombok.experimental.SuperBuilder;
     description = """
         Periodically runs a MongoDB find; if results are non-empty, starts a Flow with the rows or stored file. Uses Find task behavior (filter/projection/sort/limit/skip). Default interval is 60s and store is false, returning rows in trigger output.
 
+        By default, every poll that returns documents starts an execution, including for documents an earlier poll already delivered. Set `watermarkField` to deliver each document once.
+
         Decimal128 values are read as exact decimals, which stored results keep; in `rows` the execution outputs can show them as doubles, so store the results when the exact value matters. Decimal128 NaN, infinities and negative zero have no exact decimal form and are returned as doubles. Values with no JSON equivalent (Timestamp, regular expression, MinKey, MaxKey, JavaScript, DBPointer) are returned as [MongoDB Extended JSON](https://www.mongodb.com/docs/manual/reference/mongodb-extended-json/) objects, such as `{"$timestamp": {"t": 1700000000, "i": 7}}`, which `Load` writes back as the same type. Values inside the scope of JavaScript with scope are read like any other field, so `Load` writes an ObjectId or a date there back as a string. Deprecated Symbol and Undefined values are returned as a string and null."""
 )
 @Plugin(
@@ -70,6 +72,36 @@ import lombok.experimental.SuperBuilder;
                       title: 1
                       publishedDate: 1
                       pageCount: 1
+                """
+        ),
+        @Example(
+            title = "Deliver each new or updated order once, using its `updatedAt` field as the watermark.",
+            full = true,
+            code = """
+                id: mongodb_trigger_watermark
+                namespace: company.team
+
+                tasks:
+                  - id: each
+                    type: io.kestra.plugin.core.flow.ForEach
+                    values: "{{ trigger.rows }}"
+                    tasks:
+                      - id: log
+                        type: io.kestra.plugin.core.log.Log
+                        message: "{{ taskrun.value }}"
+
+                triggers:
+                  - id: watch
+                    type: io.kestra.plugin.mongodb.Trigger
+                    interval: "PT1M"
+                    connection:
+                      uri: "{{ secret('MONGODB_URI') }}"
+                    database: shop
+                    collection: orders
+                    filter:
+                      status: paid
+                    watermarkField: updatedAt
+                    limit: 500
                 """
         )
     }
@@ -146,6 +178,18 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     @PluginProperty(group = "advanced")
     private Property<Boolean> store = Property.ofValue(false);
 
+    @Schema(
+        title = "Watermark field",
+        description = """
+            Field used to deliver each document only once, such as `updatedAt`, a sequence number or `_id`. A dotted path reaches a nested field.
+            When set, the trigger stores the position of the last delivered document in the namespace KV Store and only returns the documents after it, read in the order of this field and then `_id`; `limit` caps how many each poll returns. It can't be combined with `sort` or `skip`.
+            Use a field whose value only increases when a document is added or updated, with a single type across documents: a document written later with a lower value is never returned, nor is one whose value has another type than the stored position (a string among dates, for example). ObjectId `_id` values are only ordered to the second across clients. Documents where the field is missing or null are never returned.
+            On a large collection, create an index on the fields `filter` matches by equality, then this field, then `_id` (for example `{status: 1, updatedAt: 1, _id: 1}`), so that each poll doesn't scan and sort the whole collection; `_id` alone needs no extra index.
+            When not set, every poll that returns documents starts an execution, including for documents an earlier poll already delivered."""
+    )
+    @PluginProperty(group = "processing")
+    private Property<String> watermarkField;
+
     @Getter(AccessLevel.NONE)
     @EqualsAndHashCode.Exclude
     @ToString.Exclude
@@ -175,10 +219,12 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
             .store(this.store)
             .build();
 
+        var watermark = this.watermark(runContext, context);
+
         MongoClient mongoClient = this.connection.client(runContext);
         this.client = mongoClient;
         try (mongoClient) {
-            Find.Output output = find.run(runContext, mongoClient, mongoCursor -> this.cursor = mongoCursor);
+            Find.Output output = find.run(runContext, mongoClient, mongoCursor -> this.cursor = mongoCursor, watermark != null ? watermark : Find.QueryHook.NONE);
 
             logger.debug("Found '{}' rows", output.getSize());
 
@@ -186,13 +232,35 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
                 return Optional.empty();
             }
 
-            return Optional.of(
-                TriggerService.generateExecution(this, conditionContext, context, output)
-            );
+            var execution = TriggerService.generateExecution(this, conditionContext, context, output);
+
+            // saved once the execution exists, so a poll that can't start one doesn't skip its documents
+            if (watermark != null) {
+                watermark.save();
+            }
+
+            return Optional.of(execution);
         } finally {
             this.cursor = null;
             this.client = null;
         }
+    }
+
+    // null when watermarkField isn't set
+    private TriggerWatermark watermark(RunContext runContext, TriggerContext context) throws Exception {
+        var rWatermarkField = runContext.render(this.watermarkField).as(String.class).filter(field -> !field.isBlank());
+        if (rWatermarkField.isEmpty()) {
+            return null;
+        }
+
+        if (this.sort != null) {
+            throw new IllegalArgumentException("`sort` can't be combined with `watermarkField`: the trigger reads documents in watermark order so that none is skipped.");
+        }
+        if (runContext.render(this.skip).as(Integer.class).orElse(0) > 0) {
+            throw new IllegalArgumentException("`skip` can't be combined with `watermarkField`: skipped documents would never be delivered.");
+        }
+
+        return TriggerWatermark.load(runContext, context.getNamespace(), context.getFlowId(), this.id, rWatermarkField.get());
     }
 
     /**
