@@ -83,7 +83,7 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
     public Delete.Output run(RunContext runContext) throws Exception {
         Logger logger = runContext.logger();
 
-        try (MongoClient client = this.connection.client(runContext)) {
+        try (MongoClient client = this.client(runContext)) {
             MongoCollection<Bson> collection = this.collection(runContext, client);
 
             BsonDocument bsonFilter = MongoDbService.toDocument(runContext, this.filter);

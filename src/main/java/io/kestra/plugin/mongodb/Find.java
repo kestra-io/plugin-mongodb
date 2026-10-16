@@ -136,7 +136,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
 
     @Override
     public Find.Output run(RunContext runContext) throws Exception {
-        try (MongoClient client = this.connection.client(runContext)) {
+        try (MongoClient client = this.client(runContext)) {
             return run(runContext, client, mongoCursor ->
             {
             }, QueryHook.NONE);
