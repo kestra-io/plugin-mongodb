@@ -5,6 +5,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -35,6 +36,7 @@ import io.kestra.core.utils.IdUtils;
 import jakarta.inject.Inject;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.startsWith;
@@ -183,6 +185,37 @@ class LoadTest extends MongoDbContainer {
             assertThat(stored.get("externalId").getBsonType(), is(BsonType.OBJECT_ID));
             assertThat(stored.getDocument("nested").get("count").getBsonType(), is(BsonType.INT64));
             assertThat(stored.getDocument("nested").getArray("ids").get(0).getBsonType(), is(BsonType.OBJECT_ID));
+        }
+    }
+
+    @Test
+    void runWithNestedIdWrittenLast() throws Exception {
+        String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        // a nested _id as the last field name used to fail the whole chunk, the valid first record included
+        URI uri = put(
+            List.of(
+                ImmutableMap.of("k", "first"),
+                ImmutableMap.of("k", "last", "customer", ImmutableMap.of("name", "ann", "_id", "c-42")),
+                ImmutableMap.of("k", "array", "items", List.of(ImmutableMap.of("q", "a", "_id", "i-7")))
+            )
+        );
+
+        Load.Output output = load(database, "nested_id", uri).build().run(runContextFactory.of());
+
+        assertThat(output.getInsertedCount(), is(3));
+        try (MongoClient client = getMongoClient()) {
+            List<Document> stored = client.getDatabase(database).getCollection("nested_id").find().into(new ArrayList<>());
+            for (Document document : stored) {
+                assertThat(document.remove("_id"), instanceOf(ObjectId.class));
+            }
+            assertThat(
+                stored,
+                containsInAnyOrder(
+                    new Document("k", "first"),
+                    new Document("k", "last").append("customer", new Document("name", "ann").append("_id", "c-42")),
+                    new Document("k", "array").append("items", List.of(new Document("q", "a").append("_id", "i-7")))
+                )
+            );
         }
     }
 

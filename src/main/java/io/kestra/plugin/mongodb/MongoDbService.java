@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
 
 import org.bson.BsonBinarySubType;
 import org.bson.BsonDocument;
+import org.bson.BsonObjectId;
 import org.bson.BsonValue;
 import org.bson.types.Decimal128;
 
@@ -28,6 +29,16 @@ public abstract class MongoDbService {
         } else {
             throw new IllegalVariableEvaluationException("Invalid value type '" + value.getClass() + "'");
         }
+    }
+
+    // MongoCollection<Bson> leaves a missing _id to the driver, which can't add one when the last field name written is a nested _id
+    // (NPE, or an unreadable id for null and MinKey); typed collections avoid it by adding the _id before encoding, as done here
+    public static <T extends Map<String, ? super BsonObjectId>> T withId(T document) {
+        if (!document.containsKey("_id")) {
+            document.put("_id", new BsonObjectId());
+        }
+
+        return document;
     }
 
     public static String toIdString(BsonValue id) {
