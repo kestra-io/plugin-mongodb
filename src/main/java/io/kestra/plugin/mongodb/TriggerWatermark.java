@@ -2,13 +2,16 @@ package io.kestra.plugin.mongodb;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 import org.bson.BsonArray;
 import org.bson.BsonDocument;
 import org.bson.BsonInt32;
 import org.bson.BsonNull;
 import org.bson.BsonString;
+import org.bson.BsonType;
 import org.bson.BsonValue;
 import org.bson.json.JsonMode;
 import org.bson.json.JsonWriterSettings;
@@ -33,6 +36,25 @@ final class TriggerWatermark implements Find.QueryHook {
     // JsonMode.EXTENDED writes canonical Extended JSON (the driver has no CANONICAL mode), which unlike RELAXED
     // keeps the BSON type of the stored value (date, ObjectId, Int64, ...)
     private static final JsonWriterSettings EXTENDED_JSON = JsonWriterSettings.builder().outputMode(JsonMode.EXTENDED).build();
+    // the order MongoDB sorts values of different types in, see https://www.mongodb.com/docs/manual/reference/bson-type-comparison-order/
+    private static final List<Set<BsonType>> TYPE_ORDER = List.of(
+        EnumSet.of(BsonType.MIN_KEY),
+        EnumSet.of(BsonType.NULL),
+        EnumSet.of(BsonType.DOUBLE, BsonType.INT32, BsonType.INT64, BsonType.DECIMAL128),
+        EnumSet.of(BsonType.STRING, BsonType.SYMBOL),
+        EnumSet.of(BsonType.DOCUMENT),
+        EnumSet.of(BsonType.ARRAY),
+        EnumSet.of(BsonType.BINARY),
+        EnumSet.of(BsonType.OBJECT_ID),
+        EnumSet.of(BsonType.BOOLEAN),
+        EnumSet.of(BsonType.DATE_TIME),
+        EnumSet.of(BsonType.TIMESTAMP),
+        EnumSet.of(BsonType.REGULAR_EXPRESSION),
+        EnumSet.of(BsonType.DB_POINTER),
+        EnumSet.of(BsonType.JAVASCRIPT),
+        EnumSet.of(BsonType.JAVASCRIPT_WITH_SCOPE),
+        EnumSet.of(BsonType.MAX_KEY)
+    );
 
     private final KVStore kvStore;
     private final String key;
@@ -104,18 +126,34 @@ final class TriggerWatermark implements Find.QueryHook {
         } else if (field.equals(ID)) {
             after = new BsonDocument(ID, new BsonDocument("$gt", lastValue));
         } else {
-            after = new BsonDocument(
-                "$or",
-                new BsonArray(
-                    List.of(
-                        new BsonDocument(field, new BsonDocument("$gt", lastValue)),
-                        new BsonDocument(field, lastValue).append(ID, new BsonDocument("$gt", lastId))
-                    )
+            var branches = new BsonArray(
+                List.of(
+                    new BsonDocument(field, new BsonDocument("$gt", lastValue)),
+                    new BsonDocument(field, lastValue).append(ID, new BsonDocument("$gt", lastId))
                 )
             );
+            // $gt only matches an _id of the position's type, so tied documents with an _id of a type sorted after it need $type
+            var laterTypes = typesAfter(lastId.getBsonType());
+            if (!laterTypes.isEmpty()) {
+                branches.add(new BsonDocument(field, lastValue).append(ID, new BsonDocument("$type", laterTypes)));
+            }
+            after = new BsonDocument("$or", branches);
         }
 
         return filter.isEmpty() ? after : new BsonDocument("$and", new BsonArray(List.of(filter, after)));
+    }
+
+    // the $type numbers of the types MongoDB sorts after the given one; they equal BsonType's values except for MinKey, which sorts first
+    private static BsonArray typesAfter(BsonType type) {
+        var types = new BsonArray();
+        var after = false;
+        for (var group : TYPE_ORDER) {
+            if (after) {
+                group.forEach(later -> types.add(new BsonInt32(later.getValue())));
+            }
+            after = after || group.contains(type);
+        }
+        return types;
     }
 
     @Override

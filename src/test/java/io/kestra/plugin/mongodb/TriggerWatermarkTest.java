@@ -1,14 +1,24 @@
 package io.kestra.plugin.mongodb;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.IntStream;
 
 import org.bson.BsonDocument;
+import org.bson.BsonTimestamp;
 import org.bson.Document;
+import org.bson.types.Binary;
+import org.bson.types.Code;
+import org.bson.types.Decimal128;
+import org.bson.types.MaxKey;
+import org.bson.types.MinKey;
 import org.bson.types.ObjectId;
+import org.bson.types.Symbol;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -16,6 +26,7 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.Sorts;
 import com.mongodb.client.model.Updates;
 
 import io.kestra.core.junit.annotations.KestraTest;
@@ -75,6 +86,53 @@ class TriggerWatermarkTest extends MongoDbContainer {
         assertThat(poll(trigger), contains(1, 2));
         assertThat(poll(trigger), contains(3));
         assertThat(poll(trigger), empty());
+    }
+
+    @Test
+    void tiedDocumentsWithAnIdOfAnotherTypeAreNotSkippedWhenLimitSplitsThem() throws Exception {
+        var objectId = new ObjectId();
+        insert(order(1, 1), new Document("_id", "a").append("updatedAt", at(1)), new Document("_id", objectId).append("updatedAt", at(1)), order(2, 2));
+        var trigger = trigger("updatedAt").limit(Property.ofValue(1)).build();
+
+        assertThat(poll(trigger), contains(1));
+        assertThat(poll(trigger), contains("a"));
+        assertThat(poll(trigger), contains(objectId.toHexString()));
+        assertThat(poll(trigger), contains(2));
+        assertThat(poll(trigger), empty());
+    }
+
+    @Test
+    void tiedDocumentsWrittenLaterWithAnIdOfAnotherTypeAreDelivered() throws Exception {
+        insert(new Document("_id", "k1").append("updatedAt", at(1)));
+        var trigger = trigger("updatedAt").build();
+        assertThat(poll(trigger), contains("k1"));
+
+        var objectId = new ObjectId();
+        insert(new Document("_id", objectId).append("updatedAt", at(1)), new Document("_id", "k2").append("updatedAt", at(1)));
+        assertThat(poll(trigger), contains("k2", objectId.toHexString()));
+        assertThat(poll(trigger), empty());
+    }
+
+    @Test
+    void tiedDocumentsAreDeliveredInMongoDbOrderWhateverTheTypeOfTheirId() throws Exception {
+        // inserted in the reverse of MongoDB's order between types
+        List<Object> ids = Arrays.asList(
+            new MaxKey(), new Code("x"), new BsonTimestamp(1, 1), at(1), true, new ObjectId(), new Binary(new byte[] { 1 }),
+            new Document("k", 1), new Symbol("b"), "a", Decimal128.parse("3.5"), 2.5, 2L, 1, null, new MinKey()
+        );
+        insert(IntStream.range(0, ids.size()).mapToObj(i -> new Document("_id", ids.get(i)).append("updatedAt", at(1)).append("n", i)).toArray(Document[]::new));
+
+        List<Object> mongoDbOrder;
+        try (MongoClient client = MongoClients.create(connectionUri)) {
+            mongoDbOrder = orders(client).find().sort(Sorts.ascending("updatedAt", "_id")).map(document -> document.get("n")).into(new ArrayList<>());
+        }
+
+        var trigger = trigger("updatedAt").limit(Property.ofValue(1)).build();
+        var delivered = new ArrayList<>();
+        for (int i = 0; i <= ids.size(); i++) {
+            delivered.addAll(poll(trigger, "n"));
+        }
+        assertThat(delivered, is(mongoDbOrder));
     }
 
     @Test
@@ -236,10 +294,14 @@ class TriggerWatermarkTest extends MongoDbContainer {
     }
 
     // the _id of each delivered row, in delivery order
-    @SuppressWarnings("unchecked")
     private List<Object> poll(Trigger trigger) throws Exception {
+        return poll(trigger, "_id");
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Object> poll(Trigger trigger, String field) throws Exception {
         return evaluate(trigger)
-            .map(execution -> ((List<Map<String, Object>>) execution.getTrigger().getVariables().get("rows")).stream().map(row -> row.get("_id")).toList())
+            .map(execution -> ((List<Map<String, Object>>) execution.getTrigger().getVariables().get("rows")).stream().map(row -> row.get(field)).toList())
             .orElse(List.of());
     }
 
