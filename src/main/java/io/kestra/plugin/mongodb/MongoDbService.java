@@ -7,6 +7,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.bson.BsonBinarySubType;
 import org.bson.BsonDocument;
 import org.bson.BsonValue;
@@ -17,12 +19,16 @@ import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.JacksonMapper;
 
 public abstract class MongoDbService {
+    // ofJson() drops null map entries, so {deletedAt: null} becomes {} and matches every document.
+    private static final ObjectMapper JSON_WITH_NULL_MAP_ENTRIES = JacksonMapper.ofJson().copy()
+        .setDefaultPropertyInclusion(JsonInclude.Value.construct(JsonInclude.Include.NON_NULL, JsonInclude.Include.ALWAYS));
+
     @SuppressWarnings("unchecked")
     public static BsonDocument toDocument(RunContext runContext, Object value) throws IllegalVariableEvaluationException, IOException {
         if (value instanceof String) {
             return BsonDocument.parse(runContext.render((String) value));
         } else if (value instanceof Map) {
-            return BsonDocument.parse(JacksonMapper.ofJson().writeValueAsString(runContext.render((Map<String, Object>) value)));
+            return BsonDocument.parse(JSON_WITH_NULL_MAP_ENTRIES.writeValueAsString(runContext.render((Map<String, Object>) value)));
         } else if (value == null) {
             return new BsonDocument();
         } else {
