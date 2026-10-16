@@ -101,7 +101,7 @@ public class Bulk extends AbstractLoad {
 
                 WriteModel<Bson> docWriteRequest = switch (operation.getKey()) {
                     case "insertOne" -> new InsertOneModel<>(
-                        getInsertOneDocument(operation.getValue().asDocument())
+                        MongoDbService.withId(getInsertOneDocument(operation.getValue().asDocument()))
                     );
                     case "replaceOne" -> new ReplaceOneModel<>(
                         operation.getValue().asDocument().get("filter").asDocument(),
