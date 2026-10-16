@@ -123,10 +123,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
         );
     }
 
-    /**
-     * What MongoDB applied so far. Records are read ahead of the chunk being written, so after a failure only
-     * {@code applied} tells how far the run got.
-     */
+    // records are read ahead of the chunk being written, so only applied tells how far the run got
     private static class Progress {
         private long requests;
         private long applied;

@@ -342,8 +342,7 @@ class BulkTest extends MongoDbContainer {
         assertThat(metric(runContext, "requests.count"), is(2D));
     }
 
-    // its client fails the second bulkWrite like a dropped connection, which leaves no write result; a subclass of
-    // Bulk would be registered as a plugin by the annotation processor, so the connection is overridden instead
+    // fails the second bulkWrite with no write result; overriding Bulk would register a plugin
     @SuperBuilder
     private static class SecondWriteFailsConnection extends MongoDbConnection {
         @Override
