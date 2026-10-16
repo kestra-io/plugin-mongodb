@@ -12,6 +12,8 @@ import org.bson.BsonDocument;
 import org.bson.BsonValue;
 import org.bson.types.Decimal128;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.JacksonMapper;
@@ -22,7 +24,11 @@ public abstract class MongoDbService {
         if (value instanceof String) {
             return BsonDocument.parse(runContext.render((String) value));
         } else if (value instanceof Map) {
-            return BsonDocument.parse(JacksonMapper.ofJson().writeValueAsString(runContext.render((Map<String, Object>) value)));
+          ObjectMapper mapper = JacksonMapper.ofJson()
+    .copy()
+    .setSerializationInclusion(com.fasterxml.jackson.annotation.JsonInclude.Include.ALWAYS);
+
+return BsonDocument.parse(mapper.writeValueAsString(runContext.render((Map<String, Object>) value)));
         } else if (value == null) {
             return new BsonDocument();
         } else {
