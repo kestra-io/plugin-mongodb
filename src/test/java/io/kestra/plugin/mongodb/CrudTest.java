@@ -164,4 +164,44 @@ class CrudTest extends MongoDbContainer {
 
         return insertOutput.getInsertedId();
     }
+
+    @Test
+    void unacknowledgedWrite() throws Exception {
+        RunContext runContext = runContextFactory.of(Map.of());
+        String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        String unackUri = connectionUri + (connectionUri.contains("?") ? "&w=0" : "/?w=0");
+
+        InsertOne insert = InsertOne.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(unackUri)).build())
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("unack"))
+            .document(Map.of("name", "Unacknowledged"))
+            .build();
+
+        InsertOne.Output insertOutput = insert.run(runContext);
+        assertThat(insertOutput.getWasAcknowledged(), is(false));
+
+        Update update = Update.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(unackUri)).build())
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("unack"))
+            .operation(Property.ofValue(Update.Operation.UPDATE_ONE))
+            .document(Map.of("$set", Map.of("name", "Updated")))
+            .filter(Map.of("name", "Unacknowledged"))
+            .build();
+
+        Update.Output updateOutput = update.run(runContext);
+        assertThat(updateOutput.getWasAcknowledged(), is(false));
+
+        Delete delete = Delete.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(unackUri)).build())
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("unack"))
+            .operation(Property.ofValue(Delete.Operation.DELETE_ONE))
+            .filter(Map.of("name", "Updated"))
+            .build();
+
+        Delete.Output deleteOutput = delete.run(runContext);
+        assertThat(deleteOutput.getWasAcknowledged(), is(false));
+    }
 }
