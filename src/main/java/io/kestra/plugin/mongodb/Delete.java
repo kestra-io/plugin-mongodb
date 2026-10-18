@@ -97,17 +97,19 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
 
             logger.debug("Delete doc with filter: {}", bsonFilter);
 
-            runContext.metric(
-                Counter.of(
-                    "deleted.count", deleteResult.getDeletedCount(),
-                    "database", collection.getNamespace().getDatabaseName(),
-                    "collection", collection.getNamespace().getCollectionName()
-                )
-            );
+            if (deleteResult.wasAcknowledged()) {
+                runContext.metric(
+                    Counter.of(
+                        "deleted.count", deleteResult.getDeletedCount(),
+                        "database", collection.getNamespace().getDatabaseName(),
+                        "collection", collection.getNamespace().getCollectionName()
+                    )
+                );
+            }
 
             return Output.builder()
                 .wasAcknowledged(deleteResult.wasAcknowledged())
-                .deletedCount(deleteResult.getDeletedCount())
+                .deletedCount(deleteResult.wasAcknowledged() ? deleteResult.getDeletedCount() : null)
                 .build();
         }
     }
