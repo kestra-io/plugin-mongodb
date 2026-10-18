@@ -135,19 +135,21 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
 
             logger.debug("Updating doc: {} with filter: {}", bsonDocument, bsonFilter);
 
-            runContext.metric(
-                Counter.of(
-                    "updated.count", updateResult.getModifiedCount(),
-                    "database", collection.getNamespace().getDatabaseName(),
-                    "collection", collection.getNamespace().getCollectionName()
-                )
-            );
+            if (updateResult.wasAcknowledged()) {
+                runContext.metric(
+                    Counter.of(
+                        "updated.count", updateResult.getModifiedCount(),
+                        "database", collection.getNamespace().getDatabaseName(),
+                        "collection", collection.getNamespace().getCollectionName()
+                    )
+                );
+            }
 
             return Output.builder()
-                .upsertedId(updateResult.getUpsertedId() != null ? MongoDbService.toIdString(updateResult.getUpsertedId()) : null)
+                .upsertedId(updateResult.wasAcknowledged() && updateResult.getUpsertedId() != null ? MongoDbService.toIdString(updateResult.getUpsertedId()) : null)
                 .wasAcknowledged(updateResult.wasAcknowledged())
-                .matchedCount(updateResult.getMatchedCount())
-                .modifiedCount(updateResult.getModifiedCount())
+                .matchedCount(updateResult.wasAcknowledged() ? updateResult.getMatchedCount() : null)
+                .modifiedCount(updateResult.wasAcknowledged() ? updateResult.getModifiedCount() : null)
                 .build();
         }
     }
