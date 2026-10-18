@@ -414,6 +414,60 @@ class BulkTest extends MongoDbContainer {
         return (Double) runContext.metrics().stream().filter(e -> e.getName().equals(name)).findFirst().orElseThrow().getValue();
     }
 
+    @Test
+    void blankLinesAreSkipped() throws Exception {
+        var input = new BufferedReader(new StringReader(
+            "\n" +
+            "{\"insertOne\": {\"document\": {\"a\": 1}}}\n" +
+            "   \n" +
+            "{\"insertOne\": {\"document\": {\"b\": 2}}}\n" +
+            "\n"
+        ));
+
+        var run = Flux.create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER);
+        var requests = run.collectList().block();
+        assertThat(requests, hasSize(2));
+    }
+
+    @Test
+    void multipleOperationsOnSingleLineFails() {
+        var input = new BufferedReader(new StringReader(
+            "{\"insertOne\": {\"document\": {\"_id\": 1}}, \"deleteMany\": {\"filter\": {}}}\n"
+        ));
+
+        var run = Flux.create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER);
+        var e = assertThrows(IllegalArgumentException.class, () -> run.count().block());
+        assertThat(e.getMessage(), startsWith("Invalid bulk request on line 1: expected exactly 1 operation key"));
+    }
+
+    @Test
+    void deleteModelsHonorCollationAndHint() {
+        var input = new BufferedReader(new StringReader(
+            "{\"deleteOne\": {\"filter\": {\"city\": \"paris\"}, \"collation\": {\"locale\": \"en\", \"strength\": 2}, \"hint\": \"idx_city\"}}\n" +
+            "{\"deleteMany\": {\"filter\": {\"city\": \"paris\"}, \"collation\": {\"locale\": \"en\", \"strength\": 2}, \"hint\": {\"city\": 1}}}\n"
+        ));
+
+        var run = Flux.create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER);
+        var requests = run.collectList().block();
+        assertThat(requests, hasSize(2));
+        assertThat(requests.get(0), instanceOf(DeleteOneModel.class));
+        assertThat(requests.get(1), instanceOf(DeleteManyModel.class));
+    }
+
+    @Test
+    void updateAndReplaceModelsHonorHint() {
+        var input = new BufferedReader(new StringReader(
+            "{\"updateOne\": {\"filter\": {\"_id\": 1}, \"update\": {\"$set\": {\"a\": 1}}, \"hint\": \"idx_id\"}}\n" +
+            "{\"replaceOne\": {\"filter\": {\"_id\": 1}, \"replacement\": {\"b\": 2}, \"hint\": {\"_id\": 1}}}\n"
+        ));
+
+        var run = Flux.create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER);
+        var requests = run.collectList().block();
+        assertThat(requests, hasSize(2));
+        assertThat(requests.get(0), instanceOf(UpdateOneModel.class));
+        assertThat(requests.get(1), instanceOf(ReplaceOneModel.class));
+    }
+
     private static List<Document> findAll(String database, String collection) {
         try (MongoClient client = getMongoClient()) {
             return client.getDatabase(database).getCollection(collection, Document.class).find().into(new ArrayList<>());
