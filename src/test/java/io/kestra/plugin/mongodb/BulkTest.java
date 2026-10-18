@@ -414,6 +414,24 @@ class BulkTest extends MongoDbContainer {
         return (Double) runContext.metrics().stream().filter(e -> e.getName().equals(name)).findFirst().orElseThrow().getValue();
     }
 
+    @Test
+    void invalidUtf8FailsWithLineNumber() {
+        byte[] invalidUtf8 = "{\"insertOne\": {\"document\": {\"_id\": \"cafe\", \"name\": \"caf\u00e9\"}}}\n"
+            .getBytes(StandardCharsets.ISO_8859_1);
+
+        var input = new BufferedReader(new java.io.InputStreamReader(
+            new ByteArrayInputStream(invalidUtf8),
+            StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+        ));
+
+        var run = Flux.create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER);
+
+        var e = assertThrows(IllegalArgumentException.class, () -> run.count().block());
+        assertThat(e.getMessage(), is("Invalid UTF-8 byte sequence on line 1"));
+    }
+
     private static List<Document> findAll(String database, String collection) {
         try (MongoClient client = getMongoClient()) {
             return client.getDatabase(database).getCollection(collection, Document.class).find().into(new ArrayList<>());
