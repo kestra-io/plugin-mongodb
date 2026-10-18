@@ -4,6 +4,10 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -85,17 +89,32 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 public class Bulk extends AbstractLoad {
     @Override
     protected Flux<WriteModel<Bson>> source(RunContext runContext, InputStream inputStream) throws IOException {
+        CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT);
         return Flux
-            .create(this.ndJSonReader(new BufferedReader(new InputStreamReader(inputStream))), FluxSink.OverflowStrategy.BUFFER);
+            .create(this.ndJSonReader(new BufferedReader(new InputStreamReader(inputStream, decoder))), FluxSink.OverflowStrategy.BUFFER);
     }
 
     public Consumer<FluxSink<WriteModel<Bson>>> ndJSonReader(BufferedReader input) throws IOException {
         return throwConsumer(s ->
         {
             String row;
+            long lineNumber = 0;
 
             // stop reading once downstream cancelled, after a failed bulkWrite or a killed task
-            while (!s.isCancelled() && (row = input.readLine()) != null) {
+            while (!s.isCancelled()) {
+                try {
+                    row = input.readLine();
+                } catch (CharacterCodingException e) {
+                    throw new IllegalArgumentException("Invalid UTF-8 byte sequence on line " + (lineNumber + 1), e);
+                }
+
+                if (row == null) {
+                    break;
+                }
+
+                lineNumber++;
                 BsonDocument bsonDocument = BsonDocument.parse(row);
                 Map.Entry<String, BsonValue> operation = bsonDocument.entrySet().iterator().next();
 
