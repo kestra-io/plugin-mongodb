@@ -112,7 +112,7 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
             );
 
             return Output.builder()
-                .insertedId(MongoDbService.toIdString(Objects.requireNonNull(insertOneResult.getInsertedId())))
+                .insertedId(insertOneResult.wasAcknowledged() && insertOneResult.getInsertedId() != null ? MongoDbService.toIdString(insertOneResult.getInsertedId()) : null)
                 .wasAcknowledged(insertOneResult.wasAcknowledged())
                 .build();
         }
