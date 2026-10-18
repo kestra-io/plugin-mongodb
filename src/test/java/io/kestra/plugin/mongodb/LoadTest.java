@@ -263,4 +263,33 @@ class LoadTest extends MongoDbContainer {
             return client.getDatabase(database).getCollection(collection).countDocuments();
         }
     }
+
+    @Test
+    void loadWithOffsetDateTimeAndBigInteger() throws Exception {
+        File tempFile = File.createTempFile(this.getClass().getSimpleName().toLowerCase() + "_", ".ion");
+        try (OutputStream output = new FileOutputStream(tempFile)) {
+            FileSerde.write(output, Map.of(
+                "k", "offset_date",
+                "ts", java.time.OffsetDateTime.parse("2024-01-01T10:00:00+02:00"),
+                "zoned", java.time.ZonedDateTime.parse("2024-01-01T12:00:00Z"),
+                "big", new java.math.BigInteger("12345678901234567890")
+            ));
+        }
+
+        URI uri = storageInterface.put(TenantService.DEFAULT_TENANT, null, URI.create("/" + IdUtils.create() + ".ion"), new FileInputStream(tempFile));
+
+        String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        Load task = Load.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("load_dates"))
+            .from(Property.ofValue(uri.toString()))
+            .build();
+
+        RunContext runContext = runContextFactory.of();
+        Load.Output runOutput = task.run(runContext);
+
+        assertThat(runOutput.getSize(), is(1L));
+        assertThat(runOutput.getInsertedCount(), is(1L));
+    }
 }
