@@ -172,11 +172,13 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
         }
 
         private void add(BulkWriteResult result) {
-            this.insertedCount += result.getInsertedCount();
-            this.matchedCount += result.getMatchedCount();
-            this.modifiedCount += result.getModifiedCount();
-            this.deletedCount += result.getDeletedCount();
-            this.upsertedCount += result.getUpserts().size();
+            if (result.wasAcknowledged()) {
+                this.insertedCount += result.getInsertedCount();
+                this.matchedCount += result.getMatchedCount();
+                this.modifiedCount += result.getModifiedCount();
+                this.deletedCount += result.getDeletedCount();
+                this.upsertedCount += result.getUpserts().size();
+            }
         }
 
         Output output(long size) {
