@@ -1,3 +1,8 @@
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.time.OffsetDateTime;
+import java.time.ZonedDateTime;
+import org.bson.types.Decimal128;
 package io.kestra.plugin.mongodb;
 
 import java.io.InputStream;
@@ -143,6 +148,15 @@ public class Load extends AbstractLoad {
 
     @SuppressWarnings("unchecked")
     private static Object decodeExtendedJson(Object value, long record, String path) throws JsonProcessingException {
+        if (value instanceof ZonedDateTime zonedDateTime) {
+            return zonedDateTime.toInstant();
+        }
+        if (value instanceof OffsetDateTime offsetDateTime) {
+            return offsetDateTime.toInstant();
+        }
+        if (value instanceof BigInteger bigInteger) {
+            return new Decimal128(new BigDecimal(bigInteger));
+        }
         if (value instanceof Map<?, ?> map) {
             // the driver's JsonReader only interprets an object as Extended JSON based on its first key
             String firstKey = map.isEmpty() ? null : map.keySet().iterator().next().toString();
