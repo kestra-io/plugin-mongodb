@@ -1,5 +1,6 @@
 package io.kestra.plugin.mongodb;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.bson.BsonDocument;
 import org.bson.conversions.Bson;
 import org.slf4j.Logger;
@@ -96,6 +97,7 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
     )
     @PluginProperty(dynamic = true, group = "main")
     @NotNull
+    @JsonInclude(value = JsonInclude.Include.NON_NULL, content = JsonInclude.Include.ALWAYS)
     private Object document;
 
     @Schema(
@@ -104,6 +106,7 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
     )
     @PluginProperty(dynamic = true, group = "main")
     @NotNull
+    @JsonInclude(value = JsonInclude.Include.NON_NULL, content = JsonInclude.Include.ALWAYS)
     private Object filter;
 
     @Schema(

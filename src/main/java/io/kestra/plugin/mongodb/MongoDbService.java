@@ -4,10 +4,12 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.AbstractMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.bson.BsonBinarySubType;
 import org.bson.BsonDocument;
@@ -34,6 +36,11 @@ public abstract class MongoDbService {
         } else {
             throw new IllegalVariableEvaluationException("Invalid value type '" + value.getClass() + "'");
         }
+    }
+
+    static List<Map<String, Object>> readMapList(String json) throws IOException {
+        return JSON_WITH_NULL_MAP_ENTRIES.readValue(json, new TypeReference<>() {
+        });
     }
 
     public static String toIdString(BsonValue id) {

@@ -2,6 +2,7 @@ package io.kestra.plugin.mongodb;
 
 import java.util.Objects;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.bson.BsonDocument;
 import org.bson.conversions.Bson;
 import org.slf4j.Logger;
@@ -89,6 +90,7 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
     )
     @PluginProperty(dynamic = true, group = "main")
     @NotNull
+    @JsonInclude(value = JsonInclude.Include.NON_NULL, content = JsonInclude.Include.ALWAYS)
     private Object document;
 
     @Override

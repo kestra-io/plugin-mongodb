@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.util.Optional;
 
 import org.bson.BsonDocument;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -138,6 +139,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         description = "BSON string or map rendered before execution."
     )
     @PluginProperty(group = "processing")
+    @JsonInclude(value = JsonInclude.Include.NON_NULL, content = JsonInclude.Include.ALWAYS)
     private Object filter;
 
     @Schema(
@@ -145,6 +147,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         description = "BSON string or map selecting fields to return."
     )
     @PluginProperty(group = "advanced")
+    @JsonInclude(value = JsonInclude.Include.NON_NULL, content = JsonInclude.Include.ALWAYS)
     private Object projection;
 
     @Schema(
@@ -152,6 +155,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         description = "BSON string or map defining sort order."
     )
     @PluginProperty(group = "advanced")
+    @JsonInclude(value = JsonInclude.Include.NON_NULL, content = JsonInclude.Include.ALWAYS)
     private Object sort;
 
     @Schema(

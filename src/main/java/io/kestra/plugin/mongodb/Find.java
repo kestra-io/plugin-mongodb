@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 import org.apache.commons.lang3.tuple.Pair;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.bson.BsonDocument;
 import org.slf4j.Logger;
 
@@ -96,6 +97,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         description = "BSON string or map rendered before execution."
     )
     @PluginProperty(dynamic = true, group = "processing")
+    @JsonInclude(value = JsonInclude.Include.NON_NULL, content = JsonInclude.Include.ALWAYS)
     private Object filter;
 
     @Schema(
@@ -103,6 +105,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         description = "BSON string or map selecting fields to return."
     )
     @PluginProperty(dynamic = true, group = "connection")
+    @JsonInclude(value = JsonInclude.Include.NON_NULL, content = JsonInclude.Include.ALWAYS)
     private Object projection;
 
     @Schema(
@@ -110,6 +113,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         description = "BSON string or map defining sort order."
     )
     @PluginProperty(dynamic = true, group = "processing")
+    @JsonInclude(value = JsonInclude.Include.NON_NULL, content = JsonInclude.Include.ALWAYS)
     private Object sort;
 
     @Schema(

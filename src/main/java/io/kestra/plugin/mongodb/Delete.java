@@ -1,5 +1,6 @@
 package io.kestra.plugin.mongodb;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.bson.BsonDocument;
 import org.bson.conversions.Bson;
 import org.slf4j.Logger;
@@ -68,6 +69,7 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
         description = "BSON string or map rendered before execution."
     )
     @PluginProperty(dynamic = true, group = "processing")
+    @JsonInclude(value = JsonInclude.Include.NON_NULL, content = JsonInclude.Include.ALWAYS)
     private Object filter;
 
     @Schema(
