@@ -27,6 +27,7 @@ import io.kestra.core.models.tasks.RunnableTask;
 import io.kestra.core.models.tasks.common.FetchType;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.FileSerde;
+import io.kestra.core.serializers.JacksonMapper;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
@@ -124,7 +125,11 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Output> {
     @Schema(
         title = "Aggregation pipeline",
-        description = "List of stages as a BSON string or a map list, rendered before execution. A null inside a map stage is dropped when the flow is parsed. Pass the pipeline as a JSON string when a stage needs a null, for example `[{\"$match\": {\"k\": null}}]`."
+        description = """
+            List of stages as a BSON string or a map list, rendered before execution.
+            A null inside a map stage is dropped when the flow is parsed.
+            Pass the pipeline as a JSON string when a stage needs a null, for example `[{"$match": {"k": null}}]`.
+            """
     )
     @NotNull
     Property<List<Map<String, Object>>> pipeline;
@@ -162,36 +167,19 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
     private Property<FetchType> store = Property.ofValue(FetchType.FETCH);
 
     List<Map<String, Object>> renderedStages(RunContext runContext) throws Exception {
-        // A map-form pipeline also starts with '[', but its text is not JSON ({$match=...}).
-        var raw = this.pipeline.toString().trim();
-        if (isJsonArray(raw)) {
-            var stages = new ArrayList<Map<String, Object>>();
-            for (var stage : MongoDbService.readMapList(raw)) {
-                stages.add(runContext.render(stage));
+        // Property.toString() can print a held list as [{ $match=... }]; convertValue writes the expression.
+        var raw = JacksonMapper.ofJson().convertValue(this.pipeline, String.class);
+        if (raw != null) {
+            raw = raw.trim();
+            if (raw.startsWith("[")) {
+                var stages = new ArrayList<Map<String, Object>>();
+                for (var stage : MongoDbService.readMapList(raw)) {
+                    stages.add(runContext.render(stage));
+                }
+                return stages;
             }
-            return stages;
         }
         return runContext.render(this.pipeline).asList(Map.class);
-    }
-
-    private static boolean isJsonArray(String raw) {
-        var i = 0;
-        if (raw.isEmpty() || raw.charAt(i) != '[') {
-            return false;
-        }
-        i = skipWhitespace(raw, i + 1);
-        if (i >= raw.length() || raw.charAt(i) != '{') {
-            return false;
-        }
-        i = skipWhitespace(raw, i + 1);
-        return i < raw.length() && raw.charAt(i) == '"';
-    }
-
-    private static int skipWhitespace(String raw, int i) {
-        while (i < raw.length() && Character.isWhitespace(raw.charAt(i))) {
-            i++;
-        }
-        return i;
     }
 
     @Override

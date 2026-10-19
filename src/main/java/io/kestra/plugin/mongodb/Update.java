@@ -93,7 +93,10 @@ import lombok.experimental.SuperBuilder;
 public class Update extends AbstractTask implements RunnableTask<Update.Output> {
     @Schema(
         title = "Update payload or replacement document",
-        description = "BSON string or map rendered before execution."
+        description = """
+            BSON string or map rendered before execution.
+            A null map entry is dropped when the flow is parsed; pass a JSON string when a null is needed, for example `'{"$set": {"k": null}}'`.
+            """
     )
     @PluginProperty(dynamic = true, group = "main")
     @NotNull
@@ -102,7 +105,10 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
 
     @Schema(
         title = "Query filter",
-        description = "BSON string or map rendered before execution; selects documents to update."
+        description = """
+            BSON string or map rendered before execution; selects documents to update.
+            A null map entry is dropped when the flow is parsed; pass a JSON string when a null is needed, for example `'{"deletedAt": null}'`.
+            """
     )
     @PluginProperty(dynamic = true, group = "main")
     @NotNull

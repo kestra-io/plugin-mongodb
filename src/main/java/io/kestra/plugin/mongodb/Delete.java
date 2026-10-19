@@ -66,7 +66,11 @@ import lombok.experimental.SuperBuilder;
 public class Delete extends AbstractTask implements RunnableTask<Delete.Output> {
     @Schema(
         title = "Query filter",
-        description = "BSON string or map rendered before execution. Required with DELETE_MANY: set it to `{}` to delete every document in the collection."
+        description = """
+            BSON string or map rendered before execution.
+            Required with DELETE_MANY: set it to `{}` to delete every document in the collection.
+            A null map entry is dropped when the flow is parsed; pass a JSON string when a null is needed, for example `'{"deletedAt": null}'`.
+            """
     )
     @PluginProperty(dynamic = true, group = "processing")
     @JsonInclude(value = JsonInclude.Include.NON_NULL, content = JsonInclude.Include.ALWAYS)

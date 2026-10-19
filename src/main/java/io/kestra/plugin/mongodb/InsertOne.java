@@ -86,7 +86,10 @@ import lombok.experimental.SuperBuilder;
 public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Output> {
     @Schema(
         title = "Document to insert",
-        description = "BSON string or map rendered before execution."
+        description = """
+            BSON string or map rendered before execution.
+            A null map entry is dropped when the flow is parsed; pass a JSON string when a null is needed, for example `'{"_id": 1, "k": null}'`.
+            """
     )
     @PluginProperty(dynamic = true, group = "main")
     @NotNull

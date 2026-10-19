@@ -12,6 +12,7 @@ import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.runners.RunContextFactory;
 import io.kestra.core.serializers.JacksonMapper;
+import io.kestra.core.utils.IdUtils;
 
 import jakarta.inject.Inject;
 
@@ -71,7 +72,7 @@ class MongoDbNullValueTest {
         var filter = new LinkedHashMap<String, Object>();
         filter.put("deletedAt", null);
         var built = Delete.builder()
-            .id("delete")
+            .id(IdUtils.create())
             .type(Delete.class.getName())
             .filter(filter)
             .build();
@@ -90,7 +91,7 @@ class MongoDbNullValueTest {
         updateDocument.put("$set", set);
         var update = JacksonMapper.ofJson().readValue(
             JacksonMapper.ofJson().writeValueAsString(Update.builder()
-                .id("update")
+                .id(IdUtils.create())
                 .type(Update.class.getName())
                 .filter(Map.of("_id", 1))
                 .document(updateDocument)
@@ -107,7 +108,7 @@ class MongoDbNullValueTest {
         inserted.put("k", null);
         var insert = JacksonMapper.ofJson().readValue(
             JacksonMapper.ofJson().writeValueAsString(InsertOne.builder()
-                .id("insert")
+                .id(IdUtils.create())
                 .type(InsertOne.class.getName())
                 .document(inserted)
                 .build()),
