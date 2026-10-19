@@ -162,8 +162,9 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
     private Property<FetchType> store = Property.ofValue(FetchType.FETCH);
 
     List<Map<String, Object>> renderedStages(RunContext runContext) throws Exception {
+        // A map-form pipeline also starts with '[', but its text is not JSON ({$match=...}).
         var raw = this.pipeline.toString().trim();
-        if (raw.startsWith("[")) {
+        if (isJsonArray(raw)) {
             var stages = new ArrayList<Map<String, Object>>();
             for (var stage : MongoDbService.readMapList(raw)) {
                 stages.add(runContext.render(stage));
@@ -171,6 +172,26 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
             return stages;
         }
         return runContext.render(this.pipeline).asList(Map.class);
+    }
+
+    private static boolean isJsonArray(String raw) {
+        var i = 0;
+        if (raw.isEmpty() || raw.charAt(i) != '[') {
+            return false;
+        }
+        i = skipWhitespace(raw, i + 1);
+        if (i >= raw.length() || raw.charAt(i) != '{') {
+            return false;
+        }
+        i = skipWhitespace(raw, i + 1);
+        return i < raw.length() && raw.charAt(i) == '"';
+    }
+
+    private static int skipWhitespace(String raw, int i) {
+        while (i < raw.length() && Character.isWhitespace(raw.charAt(i))) {
+            i++;
+        }
+        return i;
     }
 
     @Override

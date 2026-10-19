@@ -2,11 +2,13 @@ package io.kestra.plugin.mongodb;
 
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
 import io.kestra.core.junit.annotations.KestraTest;
+import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.runners.RunContextFactory;
 import io.kestra.core.serializers.JacksonMapper;
@@ -112,6 +114,18 @@ class MongoDbNullValueTest {
             InsertOne.class
         );
         assertNullEntry(insert.getDocument(), "k");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void mapFormPipelineStillRenders() throws Exception {
+        var task = Aggregate.builder()
+            .pipeline(Property.ofValue(List.of(Map.of("$match", Map.of("status", "available")))))
+            .build();
+        var stages = task.renderedStages(this.runContext());
+
+        var match = (Map<String, Object>) stages.getFirst().get("$match");
+        assertThat(match.get("status"), is("available"));
     }
 
     @Test
