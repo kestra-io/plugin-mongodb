@@ -172,6 +172,12 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
         }
 
         private void add(BulkWriteResult result) {
+            // unacknowledged writes (w=0) carry no ids or counts: every getter on the
+            // result throws, so skip accumulation and let the remaining chunks flow through
+            if (!result.wasAcknowledged()) {
+                return;
+            }
+
             this.insertedCount += result.getInsertedCount();
             this.matchedCount += result.getMatchedCount();
             this.modifiedCount += result.getModifiedCount();
@@ -217,35 +223,35 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
 
         @Schema(
             title = "Inserted documents",
-            description = "Count of documents created by bulk writes."
+            description = "Count of documents created by bulk writes. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int insertedCount = 0;
 
         @Schema(
             title = "Matched documents",
-            description = "Documents matched by update or replacement models."
+            description = "Documents matched by update or replacement models. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int matchedCount = 0;
 
         @Schema(
             title = "Deleted documents",
-            description = "Documents removed by bulk delete models."
+            description = "Documents removed by bulk delete models. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int deletedCount = 0;
 
         @Schema(
             title = "Modified documents",
-            description = "Documents updated by bulk operations."
+            description = "Documents updated by bulk operations. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int modifiedCount = 0;
 
         @Schema(
             title = "Upserted documents",
-            description = "Documents created by update or replacement models with `upsert: true` that matched no document. Only `Bulk` sends these models, so it's always 0 for `Load`."
+            description = "Documents created by update or replacement models with `upsert: true` that matched no document. Only `Bulk` sends these models, so it's always 0 for `Load`. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int upsertedCount = 0;
