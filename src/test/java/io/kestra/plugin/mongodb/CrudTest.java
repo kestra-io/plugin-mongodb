@@ -9,7 +9,6 @@ import org.bson.Document;
 import org.junit.jupiter.api.Test;
 
 import com.google.common.collect.ImmutableMap;
-import com.mongodb.client.MongoCollection;
 
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
@@ -154,17 +153,17 @@ class CrudTest extends MongoDbContainer {
 
     @Test
     void deleteManyWithANullFilterLeavesOtherDocuments() throws Exception {
-        String database = databaseName();
+        var database = databaseName();
         try (var client = getMongoClient()) {
-            MongoCollection<Document> collection = client.getDatabase(database).getCollection("docs");
+            var collection = client.getDatabase(database).getCollection("docs");
             collection.insertOne(new Document("_id", 1).append("k", null));
             collection.insertOne(new Document("_id", 2));
             collection.insertOne(new Document("_id", 3).append("k", "x"));
         }
 
-        Map<String, Object> filter = new LinkedHashMap<>();
+        var filter = new LinkedHashMap<String, Object>();
         filter.put("k", null);
-        Delete.Output output = Delete.builder()
+        var output = Delete.builder()
             .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
             .database(Property.ofValue(database))
             .collection(Property.ofValue("docs"))
@@ -175,23 +174,23 @@ class CrudTest extends MongoDbContainer {
 
         assertThat(output.getDeletedCount(), is(2L));
         try (var client = getMongoClient()) {
-            Document left = client.getDatabase(database).getCollection("docs").find().first();
+            var left = client.getDatabase(database).getCollection("docs").find().first();
             assertThat(left.getInteger("_id"), is(3));
         }
     }
 
     @Test
     void updateOneSetsAFieldToNull() throws Exception {
-        String database = databaseName();
+        var database = databaseName();
         try (var client = getMongoClient()) {
             client.getDatabase(database).getCollection("docs").insertOne(new Document("_id", 1).append("k", "x"));
         }
 
-        Map<String, Object> set = new LinkedHashMap<>();
+        var set = new LinkedHashMap<String, Object>();
         set.put("k", null);
-        Map<String, Object> document = new LinkedHashMap<>();
+        var document = new LinkedHashMap<String, Object>();
         document.put("$set", set);
-        Update.Output output = Update.builder()
+        var output = Update.builder()
             .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
             .database(Property.ofValue(database))
             .collection(Property.ofValue("docs"))
@@ -203,7 +202,7 @@ class CrudTest extends MongoDbContainer {
 
         assertThat(output.getModifiedCount(), is(1L));
         try (var client = getMongoClient()) {
-            Document stored = client.getDatabase(database).getCollection("docs").find(new Document("_id", 1)).first();
+            var stored = client.getDatabase(database).getCollection("docs").find(new Document("_id", 1)).first();
             assertThat(stored.containsKey("k"), is(true));
             assertThat(stored.get("k"), is((Object) null));
         }
@@ -211,11 +210,11 @@ class CrudTest extends MongoDbContainer {
 
     @Test
     void insertOneStoresANullField() throws Exception {
-        String database = databaseName();
-        Map<String, Object> document = new LinkedHashMap<>();
+        var database = databaseName();
+        var document = new LinkedHashMap<String, Object>();
         document.put("_id", 10);
         document.put("k", null);
-        InsertOne.Output output = InsertOne.builder()
+        var output = InsertOne.builder()
             .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
             .database(Property.ofValue(database))
             .collection(Property.ofValue("docs"))
@@ -225,7 +224,7 @@ class CrudTest extends MongoDbContainer {
 
         assertThat(output.getWasAcknowledged(), is(true));
         try (var client = getMongoClient()) {
-            Document stored = client.getDatabase(database).getCollection("docs").find(new Document("_id", 10)).first();
+            var stored = client.getDatabase(database).getCollection("docs").find(new Document("_id", 10)).first();
             assertThat(stored.containsKey("k"), is(true));
             assertThat(stored.get("k"), is((Object) null));
         }
