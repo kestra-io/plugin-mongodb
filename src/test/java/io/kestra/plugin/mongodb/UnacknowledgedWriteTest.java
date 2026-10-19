@@ -161,6 +161,7 @@ class UnacknowledgedWriteTest extends MongoDbContainer {
         Load.Output output = load.run(runContext);
 
         assertThat(output.getSize(), is(5L));
+        assertThat(output.getWasAcknowledged(), is(false));
         assertThat(output.getInsertedCount(), is(0));
 
         // the whole file was written, not just the first chunk
@@ -196,6 +197,7 @@ class UnacknowledgedWriteTest extends MongoDbContainer {
         Bulk.Output output = bulk.run(runContext);
 
         assertThat(output.getSize(), is(5L));
+        assertThat(output.getWasAcknowledged(), is(false));
         assertThat(output.getInsertedCount(), is(0));
 
         try (MongoClient client = getMongoClient()) {
