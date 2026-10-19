@@ -41,7 +41,7 @@ import static io.kestra.core.utils.Rethrow.throwFunction;
 @NoArgsConstructor
 @Schema(
     title = "Bulk insert documents from internal storage",
-    description = "Reads a Kestra internal storage file of JSON/BSON records and inserts them with MongoDB bulkWrite. Inherits chunking (default 1000). Optionally derives _id from a field and removes that field. Objects whose first key is a MongoDB Extended JSON type wrapper (such as `$date`, `$oid` or `$numberDecimal`) are decoded to that BSON type; a malformed wrapper fails the task with the record and field it was found in."
+    description = "Reads a Kestra internal storage file of JSON/BSON records and inserts them with MongoDB bulkWrite. Inherits chunking (default 1000). Optionally derives _id from a field and removes that field. Objects whose first key is a MongoDB Extended JSON type wrapper (such as `$date`, `$oid` or `$numberDecimal`) are decoded to that BSON type; a malformed wrapper fails the task with the record and field it was found in. When a write fails, the task fails with the number of the failing record, and its outputs count the records applied before it, which stay in the collection. A retry reads the whole file again: without `idKey`, the records already written are inserted a second time; with `idKey`, the retry fails on the first of them with a duplicate key error."
 )
 @Plugin(
     examples = {
@@ -71,7 +71,7 @@ import static io.kestra.core.utils.Rethrow.throwFunction;
             name = "records",
             type = Counter.TYPE,
             unit = "count",
-            description = "Number of documents processed in the bulk operation"
+            description = "Number of documents processed in the bulk operation; when a write fails, those applied before it"
         ),
         @Metric(
             name = "requests.count",

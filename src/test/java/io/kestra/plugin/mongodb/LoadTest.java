@@ -8,6 +8,8 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.stream.IntStream;
 
 import org.bson.BsonDocument;
 import org.bson.BsonType;
@@ -16,10 +18,15 @@ import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
 import com.google.common.collect.ImmutableMap;
+import com.mongodb.MongoBulkWriteException;
 import com.mongodb.client.MongoClient;
+import com.mongodb.client.model.CreateCollectionOptions;
+import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.ValidationOptions;
 
 import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.property.Property;
+import io.kestra.core.models.tasks.RunnableTaskException;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.FileSerde;
 import io.kestra.core.storages.StorageInterface;
@@ -31,7 +38,9 @@ import jakarta.inject.Inject;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.startsWith;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @KestraTest
@@ -227,6 +236,84 @@ class LoadTest extends MongoDbContainer {
             assertThat(stored.get("externalId").getBsonType(), is(BsonType.OBJECT_ID));
             assertThat(stored.getDocument("nested").get("count").getBsonType(), is(BsonType.INT64));
             assertThat(stored.getDocument("nested").getArray("ids").get(0).getBsonType(), is(BsonType.OBJECT_ID));
+        }
+    }
+
+    @Test
+    void failedWriteReportsTheRecordAndWhatWasApplied() throws Exception {
+        RunContext runContext = runContextFactory.of();
+        String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        try (MongoClient client = getMongoClient()) {
+            // records 6 and above fail validation
+            client.getDatabase(database).createCollection(
+                "validated",
+                new CreateCollectionOptions().validationOptions(new ValidationOptions().validator(Filters.lt("n", 6)))
+            );
+        }
+
+        URI uri = put(IntStream.rangeClosed(1, 10).<Map<String, Object>>mapToObj(n -> Map.of("n", n)).toList());
+        Load load = load(database, "validated", uri).chunk(Property.ofValue(4)).build();
+
+        var e = assertThrows(RunnableTaskException.class, () -> load.run(runContext));
+
+        assertThat(e.getMessage(), is("Record 6 failed (5 records applied before it): Document failed validation"));
+        assertThat(e.getCause(), instanceOf(MongoBulkWriteException.class));
+        var output = (Load.Output) e.getOutput();
+        assertThat(output.getSize(), is(5L));
+        assertThat(output.getInsertedCount(), is(5));
+        assertThat(metric(runContext, "records"), is(5D));
+        assertThat(metric(runContext, "requests.count"), is(2D));
+        assertThat(count(database, "validated"), is(5L));
+    }
+
+    @Test
+    void retryWithIdKeyFailsOnTheFirstRecordAlreadyWritten() throws Exception {
+        String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        URI uri = put(
+            List.of(
+                Map.of("id", new ObjectId().toString()),
+                Map.of("id", new ObjectId().toString())
+            )
+        );
+        Load load = load(database, "retried", uri).idKey(Property.ofValue("id")).build();
+        load.run(runContextFactory.of());
+
+        var e = assertThrows(RunnableTaskException.class, () -> load.run(runContextFactory.of()));
+
+        assertThat(e.getMessage(), startsWith("Record 1 failed (0 records applied before it): E11000 duplicate key error"));
+        assertThat(((Load.Output) e.getOutput()).getInsertedCount(), is(0));
+        assertThat(count(database, "retried"), is(2L));
+    }
+
+    private URI put(List<Map<String, Object>> records) throws Exception {
+        File tempFile = File.createTempFile(this.getClass().getSimpleName().toLowerCase() + "_", ".ion");
+        try (OutputStream output = new FileOutputStream(tempFile)) {
+            for (var record : records) {
+                FileSerde.write(output, record);
+            }
+        }
+        return storageInterface.put(TenantService.MAIN_TENANT, null, URI.create("/" + IdUtils.create() + ".ion"), new FileInputStream(tempFile));
+    }
+
+    private static Load.LoadBuilder<?, ?> load(String database, String collection, URI uri) {
+        return Load.builder()
+            .connection(
+                MongoDbConnection.builder()
+                    .uri(Property.ofValue(connectionUri))
+                    .build()
+            )
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue(collection))
+            .from(Property.ofValue(uri.toString()));
+    }
+
+    private static Double metric(RunContext runContext, String name) {
+        return (Double) runContext.metrics().stream().filter(e -> e.getName().equals(name)).findFirst().orElseThrow().getValue();
+    }
+
+    private static long count(String database, String collection) {
+        try (MongoClient client = getMongoClient()) {
+            return client.getDatabase(database).getCollection(collection).countDocuments();
         }
     }
 }
