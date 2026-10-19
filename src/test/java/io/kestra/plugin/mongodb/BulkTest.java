@@ -236,6 +236,36 @@ class BulkTest extends MongoDbContainer {
     }
 
     @Test
+    void lineThatIsNotUtf8FailsWithItsNumber() throws Exception {
+        var database = newDatabase();
+        // "café" written in ISO-8859-1 on line 2: the byte 0xE9 on its own is not valid UTF-8
+        var uri = store(
+            "{\"insertOne\": {\"document\": {\"name\": \"ok\"}}}\n{\"insertOne\": {\"document\": {\"name\": \"café\"}}}\n"
+                .getBytes(StandardCharsets.ISO_8859_1)
+        );
+        var bulk = Bulk.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("latin1"))
+            .from(Property.ofValue(uri.toString()))
+            .build();
+
+        var e = assertThrows(IllegalArgumentException.class, () -> bulk.run(runContextFactory.of()));
+
+        assertThat(e.getMessage(), is("Line 2 is not valid UTF-8"));
+        assertThat(findAll(database, "latin1"), hasSize(0));
+    }
+
+    @Test
+    void multiByteUtf8IsKept() throws Exception {
+        var database = newDatabase();
+
+        runBulk(database, "utf8", "{\"insertOne\": {\"document\": {\"_id\": 1, \"name\": \"café ☕ 😀\"}}}");
+
+        assertThat(findAll(database, "utf8"), is(List.of(new Document("_id", 1).append("name", "café ☕ 😀"))));
+    }
+
+    @Test
     void upsertsAreCounted() throws Exception {
         var database = newDatabase();
         try (MongoClient client = getMongoClient()) {
@@ -402,11 +432,15 @@ class BulkTest extends MongoDbContainer {
     }
 
     private URI store(String... lines) throws Exception {
+        return store((String.join("\n", lines) + "\n").getBytes(StandardCharsets.UTF_8));
+    }
+
+    private URI store(byte[] content) throws Exception {
         return storageInterface.put(
             TenantService.MAIN_TENANT,
             null,
             URI.create("/" + IdUtils.create() + ".ion"),
-            new ByteArrayInputStream((String.join("\n", lines) + "\n").getBytes(StandardCharsets.UTF_8))
+            new ByteArrayInputStream(content)
         );
     }
 
