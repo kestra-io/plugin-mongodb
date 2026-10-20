@@ -237,7 +237,7 @@ class BulkTest extends MongoDbContainer {
 
     @Test
     void insertOneWithNestedIdWrittenLast() throws Exception {
-        String database = newDatabase();
+        var database = newDatabase();
 
         // a nested _id as the last field name used to fail the whole chunk, the valid first record included
         var output = runBulk(
@@ -248,8 +248,8 @@ class BulkTest extends MongoDbContainer {
         );
 
         assertThat(output.getInsertedCount(), is(3));
-        List<Document> stored = findAll(database, "nested_id");
-        for (Document document : stored) {
+        var stored = findAll(database, "nested_id");
+        for (var document : stored) {
             assertThat(document.remove("_id"), instanceOf(ObjectId.class));
         }
         assertThat(

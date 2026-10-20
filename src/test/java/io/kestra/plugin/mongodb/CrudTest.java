@@ -9,7 +9,6 @@ import org.bson.BsonDocument;
 import org.junit.jupiter.api.Test;
 
 import com.google.common.collect.ImmutableMap;
-import com.mongodb.client.MongoClient;
 
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
@@ -175,12 +174,13 @@ class CrudTest extends MongoDbContainer {
 
             var insertOutput = insert.run(runContextFactory.of(Map.of()));
 
-            try (MongoClient client = getMongoClient()) {
+            try (var client = getMongoClient()) {
                 var stored = client.getDatabase(database).getCollection("nested_" + i, BsonDocument.class).find().into(new ArrayList<>());
                 assertThat(stored, hasSize(1));
-                var id = stored.get(0).remove("_id");
+                var document = stored.getFirst();
+                var id = document.remove("_id");
                 assertThat(insertOutput.getInsertedId(), is(id.asObjectId().getValue().toHexString()));
-                assertThat(stored.get(0), is(BsonDocument.parse(documents.get(i))));
+                assertThat(document, is(BsonDocument.parse(documents.get(i))));
             }
         }
     }

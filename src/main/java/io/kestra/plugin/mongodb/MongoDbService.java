@@ -31,8 +31,7 @@ public abstract class MongoDbService {
         }
     }
 
-    // MongoCollection<Bson> leaves a missing _id to the driver, which can't add one when the last field name written is a nested _id
-    // (NPE, or an unreadable id for null and MinKey); typed collections avoid it by adding the _id before encoding, as done here
+    // add the _id before the driver does: with MongoCollection<Bson> it fails when the last field name written is a nested _id
     public static <T extends Map<String, ? super BsonObjectId>> T withId(T document) {
         if (!document.containsKey("_id")) {
             document.put("_id", new BsonObjectId());
