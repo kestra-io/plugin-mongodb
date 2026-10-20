@@ -65,7 +65,7 @@ import lombok.experimental.SuperBuilder;
 public class Delete extends AbstractTask implements RunnableTask<Delete.Output> {
     @Schema(
         title = "Query filter",
-        description = "BSON string or map rendered before execution. Required with DELETE_MANY: set it to `{}` to delete every document in the collection."
+        description = "BSON string or map rendered before execution."
     )
     @PluginProperty(dynamic = true, group = "processing")
     private Object filter;
@@ -83,18 +83,13 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
     public Delete.Output run(RunContext runContext) throws Exception {
         Logger logger = runContext.logger();
 
-        var rOperation = runContext.render(this.operation).as(Operation.class).orElseThrow();
-        if (this.filter == null && Operation.DELETE_MANY.equals(rOperation)) {
-            throw new IllegalArgumentException("`filter` is required with DELETE_MANY: set `filter: {}` to delete every document in the collection.");
-        }
-
         try (MongoClient client = this.connection.client(runContext)) {
             MongoCollection<Bson> collection = this.collection(runContext, client);
 
             BsonDocument bsonFilter = MongoDbService.toDocument(runContext, this.filter);
 
             DeleteResult deleteResult;
-            if (Operation.DELETE_ONE.equals(rOperation)) {
+            if (Operation.DELETE_ONE.equals(runContext.render(this.operation).as(Operation.class).orElseThrow())) {
                 deleteResult = collection.deleteOne(bsonFilter);
             } else {
                 deleteResult = collection.deleteMany(bsonFilter);
@@ -102,17 +97,23 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
 
             logger.debug("Delete doc with filter: {}", bsonFilter);
 
-            runContext.metric(
-                Counter.of(
-                    "deleted.count", deleteResult.getDeletedCount(),
-                    "database", collection.getNamespace().getDatabaseName(),
-                    "collection", collection.getNamespace().getCollectionName()
-                )
-            );
+            // an unacknowledged write (w=0) carries no counts: getDeletedCount() throws on it,
+            // including in the metric below
+            boolean acknowledged = deleteResult.wasAcknowledged();
+
+            if (acknowledged) {
+                runContext.metric(
+                    Counter.of(
+                        "deleted.count", deleteResult.getDeletedCount(),
+                        "database", collection.getNamespace().getDatabaseName(),
+                        "collection", collection.getNamespace().getCollectionName()
+                    )
+                );
+            }
 
             return Output.builder()
-                .wasAcknowledged(deleteResult.wasAcknowledged())
-                .deletedCount(deleteResult.getDeletedCount())
+                .wasAcknowledged(acknowledged)
+                .deletedCount(acknowledged ? deleteResult.getDeletedCount() : 0L)
                 .build();
         }
     }
@@ -131,7 +132,8 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
         private Boolean wasAcknowledged;
 
         @Schema(
-            title = "Documents deleted"
+            title = "Documents deleted",
+            description = "0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         private final long deletedCount;
     }
