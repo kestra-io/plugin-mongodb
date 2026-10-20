@@ -1,10 +1,12 @@
 package io.kestra.plugin.mongodb;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import org.bson.BsonDocument;
 import org.bson.Document;
 import org.junit.jupiter.api.Test;
 
@@ -15,6 +17,7 @@ import io.kestra.core.runners.RunContext;
 import io.kestra.core.utils.IdUtils;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 
 class CrudTest extends MongoDbContainer {
@@ -149,6 +152,39 @@ class CrudTest extends MongoDbContainer {
     @Test
     void insertOneDocumentId() throws Exception {
         assertThat(insertOneWithId(ImmutableMap.of("a", 1, "b", "x")), is("{\"a\": 1, \"b\": \"x\"}"));
+    }
+
+    @Test
+    void insertOneWithNestedIdWrittenLast() throws Exception {
+        var database = databaseName();
+        // no top-level _id and a nested _id as the last field name: the driver failed with an NPE, or for null and MinKey wrote and returned an unreadable id
+        var documents = List.of(
+            "{\"k\": 1, \"a\": {\"_id\": 1}}",
+            "{\"a\": {\"b\": 2, \"_id\": 1}}",
+            "{\"a\": [{\"_id\": 1}, 5]}",
+            "{\"tag\": \"x\", \"p\": {\"_id\": null}}",
+            "{\"tag\": \"x\", \"p\": {\"_id\": {\"$minKey\": 1}}}"
+        );
+
+        for (int i = 0; i < documents.size(); i++) {
+            var insert = InsertOne.builder()
+                .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
+                .database(Property.ofValue(database))
+                .collection(Property.ofValue("nested_" + i))
+                .document(documents.get(i))
+                .build();
+
+            var insertOutput = insert.run(runContextFactory.of(Map.of()));
+
+            try (var client = getMongoClient()) {
+                var stored = client.getDatabase(database).getCollection("nested_" + i, BsonDocument.class).find().into(new ArrayList<>());
+                assertThat(stored, hasSize(1));
+                var document = stored.getFirst();
+                var id = document.remove("_id");
+                assertThat(insertOutput.getInsertedId(), is(id.asObjectId().getValue().toHexString()));
+                assertThat(document, is(BsonDocument.parse(documents.get(i))));
+            }
+        }
     }
 
     @Test

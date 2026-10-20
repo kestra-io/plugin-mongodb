@@ -13,6 +13,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.bson.BsonBinarySubType;
 import org.bson.BsonDocument;
+import org.bson.BsonObjectId;
 import org.bson.BsonValue;
 import org.bson.types.Decimal128;
 
@@ -36,6 +37,15 @@ public abstract class MongoDbService {
         } else {
             throw new IllegalVariableEvaluationException("Invalid value type '" + value.getClass() + "'");
         }
+    }
+
+    // add the _id before the driver does: with MongoCollection<Bson> it fails when the last field name written is a nested _id
+    public static <T extends Map<String, ? super BsonObjectId>> T withId(T document) {
+        if (!document.containsKey("_id")) {
+            document.put("_id", new BsonObjectId());
+        }
+
+        return document;
     }
 
     static List<Map<String, Object>> readMapList(String json) throws IOException {
