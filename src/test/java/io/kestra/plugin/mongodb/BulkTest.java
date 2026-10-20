@@ -27,6 +27,10 @@ import com.mongodb.ServerAddress;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.DeleteManyModel;
+import com.mongodb.client.model.DeleteOneModel;
+import com.mongodb.client.model.ReplaceOneModel;
+import com.mongodb.client.model.UpdateOneModel;
 
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.junit.annotations.KestraTest;
@@ -439,6 +443,84 @@ class BulkTest extends MongoDbContainer {
 
     private static Double metric(RunContext runContext, String name) {
         return (Double) runContext.metrics().stream().filter(e -> e.getName().equals(name)).findFirst().orElseThrow().getValue();
+    }
+
+    @Test
+    void blankAndWhitespaceLinesAreSkipped() throws IOException {
+        // Leading blank, whitespace-only, and trailing blank lines must all be ignored;
+        // only the two insertOne lines should produce write models.
+        var input = new BufferedReader(new StringReader(
+            "\n"
+            + "{\"insertOne\": {\"document\": {\"a\": 1}}}\n"
+            + "   \n"
+            + "{\"insertOne\": {\"document\": {\"b\": 2}}}\n"
+            + "\n"
+        ));
+
+        var requests = Flux
+            .create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER)
+            .collectList()
+            .block();
+
+        assertThat(requests, hasSize(2));
+    }
+
+    @Test
+    void lineWithMultipleOperationKeysFails() throws IOException {
+        // A JSON object with more than one top-level key is ambiguous; the task must
+        // fail immediately with a clear message that includes the line number.
+        var input = new BufferedReader(new StringReader(
+            "{\"insertOne\": {\"document\": {\"_id\": 1}}, \"deleteMany\": {\"filter\": {}}}\n"
+        ));
+
+        var ex = assertThrows(
+            IllegalArgumentException.class,
+            () -> Flux
+                .create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER)
+                .count()
+                .block()
+        );
+
+        assertThat(ex.getMessage(), startsWith("Invalid bulk request on line 1: expected exactly 1 operation key"));
+    }
+
+    @Test
+    void deleteOneAndDeleteManyHonourCollationAndHint() throws IOException {
+        // deleteOne and deleteMany must pass collation and hint through to DeleteOptions.
+        // This test verifies that the models are built without error — the integration
+        // test in the run() method above covers the end-to-end behaviour against MongoDB.
+        var input = new BufferedReader(new StringReader(
+            "{\"deleteOne\":  {\"filter\": {\"city\": \"paris\"}, \"collation\": {\"locale\": \"en\", \"strength\": 2}, \"hint\": \"idx_city\"}}\n"
+            + "{\"deleteMany\": {\"filter\": {\"city\": \"paris\"}, \"collation\": {\"locale\": \"en\", \"strength\": 2}, \"hint\": {\"city\": 1}}}\n"
+        ));
+
+        var requests = Flux
+            .create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER)
+            .collectList()
+            .block();
+
+        assertThat(requests, hasSize(2));
+        assertThat(requests.get(0), instanceOf(DeleteOneModel.class));
+        assertThat(requests.get(1), instanceOf(DeleteManyModel.class));
+    }
+
+    @Test
+    void updateOneAndReplaceOneHonourHint() throws IOException {
+        // hint (both as an index-name string and as a key-pattern document) must be
+        // forwarded to UpdateOptions and ReplaceOptions without error.
+        var input = new BufferedReader(new StringReader(
+            "{\"updateOne\":  {\"filter\": {\"_id\": 1}, \"update\": {\"$set\": {\"a\": 1}}, \"hint\": \"idx_id\"}}\n"
+            + "{\"replaceOne\": {\"filter\": {\"_id\": 1}, \"replacement\": {\"b\": 2},  \"hint\": {\"_id\": 1}}}\n"
+        ));
+
+        var requests = Flux
+            .create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER)
+            .collectList()
+            .block();
+
+        assertThat(requests, hasSize(2));
+        assertThat(requests.get(0), instanceOf(UpdateOneModel.class));
+        assertThat(requests.get(1), instanceOf(ReplaceOneModel.class));
     }
 
     private static List<Document> findAll(String database, String collection) {

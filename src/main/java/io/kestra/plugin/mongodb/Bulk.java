@@ -93,10 +93,27 @@ public class Bulk extends AbstractLoad {
         return throwConsumer(s ->
         {
             String row;
+            long lineNumber = 0;
 
             // stop reading once downstream cancelled, after a failed bulkWrite or a killed task
             while (!s.isCancelled() && (row = input.readLine()) != null) {
+                lineNumber++;
+
+                // skip blank and whitespace-only lines (e.g. a trailing newline at end of file)
+                if (row.trim().isEmpty()) {
+                    continue;
+                }
+
                 BsonDocument bsonDocument = BsonDocument.parse(row);
+
+                // a valid bulk line carries exactly one operation key
+                if (bsonDocument.size() != 1) {
+                    throw new IllegalArgumentException(
+                        "Invalid bulk request on line " + lineNumber + ": expected exactly 1 operation key, found "
+                            + bsonDocument.size() + " on '" + row + "'"
+                    );
+                }
+
                 Map.Entry<String, BsonValue> operation = bsonDocument.entrySet().iterator().next();
 
                 WriteModel<Bson> docWriteRequest = switch (operation.getKey()) {
@@ -119,10 +136,12 @@ public class Bulk extends AbstractLoad {
                         getUpdateOptions(operation.getValue().asDocument())
                     );
                     case "deleteOne" -> new DeleteOneModel<>(
-                        operation.getValue().asDocument().get("filter").asDocument()
+                        operation.getValue().asDocument().get("filter").asDocument(),
+                        getDeleteOptions(operation.getValue().asDocument())
                     );
                     case "deleteMany" -> new DeleteManyModel<>(
-                        operation.getValue().asDocument().get("filter").asDocument()
+                        operation.getValue().asDocument().get("filter").asDocument(),
+                        getDeleteOptions(operation.getValue().asDocument())
                     );
                     default ->
                         throw new IllegalArgumentException("Invalid bulk request type on '" + row + "'");
@@ -159,6 +178,14 @@ public class Bulk extends AbstractLoad {
             options.collation(getCollation(document.get("collation").asDocument()));
         }
 
+        if (document.containsKey("hint")) {
+            if (document.get("hint").isString()) {
+                options.hintString(document.get("hint").asString().getValue());
+            } else if (document.get("hint").isDocument()) {
+                options.hint(document.get("hint").asDocument());
+            }
+        }
+
         return options;
     }
 
@@ -177,6 +204,14 @@ public class Bulk extends AbstractLoad {
             options.collation(getCollation(document.get("collation").asDocument()));
         }
 
+        if (document.containsKey("hint")) {
+            if (document.get("hint").isString()) {
+                options.hintString(document.get("hint").asString().getValue());
+            } else if (document.get("hint").isDocument()) {
+                options.hint(document.get("hint").asDocument());
+            }
+        }
+
         if (document.containsKey("arrayFilters") && document.get("arrayFilters").isArray()) {
             List<Bson> arrayFilters = new ArrayList<>();
 
@@ -185,6 +220,24 @@ public class Bulk extends AbstractLoad {
             }
 
             options.arrayFilters(arrayFilters);
+        }
+
+        return options;
+    }
+
+    private DeleteOptions getDeleteOptions(BsonDocument document) {
+        DeleteOptions options = new DeleteOptions();
+
+        if (document.containsKey("collation") && document.get("collation").isDocument()) {
+            options.collation(getCollation(document.get("collation").asDocument()));
+        }
+
+        if (document.containsKey("hint")) {
+            if (document.get("hint").isString()) {
+                options.hintString(document.get("hint").asString().getValue());
+            } else if (document.get("hint").isDocument()) {
+                options.hint(document.get("hint").asDocument());
+            }
         }
 
         return options;
