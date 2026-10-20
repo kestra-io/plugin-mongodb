@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.apache.commons.lang3.tuple.Pair;
 import org.bson.BsonDocument;
 import org.slf4j.Logger;
@@ -93,23 +94,35 @@ import reactor.core.publisher.Flux;
 public class Find extends AbstractTask implements RunnableTask<Find.Output> {
     @Schema(
         title = "Query filter",
-        description = "BSON string or map rendered before execution."
+        description = """
+            BSON string or map rendered before execution.
+            A null map entry is dropped when the flow is parsed; pass a JSON string when a null is needed, for example `'{"deletedAt": null}'`.
+            """
     )
     @PluginProperty(dynamic = true, group = "processing")
+    @JsonInclude(value = JsonInclude.Include.NON_NULL, content = JsonInclude.Include.ALWAYS)
     private Object filter;
 
     @Schema(
         title = "Projection",
-        description = "BSON string or map selecting fields to return."
+        description = """
+            BSON string or map selecting fields to return.
+            A null map entry is dropped when the flow is parsed; pass a JSON string when a null is needed.
+            """
     )
     @PluginProperty(dynamic = true, group = "connection")
+    @JsonInclude(value = JsonInclude.Include.NON_NULL, content = JsonInclude.Include.ALWAYS)
     private Object projection;
 
     @Schema(
         title = "Sort",
-        description = "BSON string or map defining sort order."
+        description = """
+            BSON string or map defining sort order.
+            A null map entry is dropped when the flow is parsed; pass a JSON string when a null is needed.
+            """
     )
     @PluginProperty(dynamic = true, group = "processing")
+    @JsonInclude(value = JsonInclude.Include.NON_NULL, content = JsonInclude.Include.ALWAYS)
     private Object sort;
 
     @Schema(

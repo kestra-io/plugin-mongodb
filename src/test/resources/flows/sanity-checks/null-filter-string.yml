@@ -1,0 +1,26 @@
+id: mongodb_null_filter_string
+namespace: io.kestra.tests
+
+tasks:
+  - id: insert_null
+    type: io.kestra.plugin.mongodb.InsertOne
+    connection:
+      uri: "{{ globals['mongodb-uri'] }}"
+    database: nulls_db
+    collection: docs
+    document: '{"_id": 1, "k": null}'
+  - id: insert_value
+    type: io.kestra.plugin.mongodb.InsertOne
+    connection:
+      uri: "{{ globals['mongodb-uri'] }}"
+    database: nulls_db
+    collection: docs
+    document: '{"_id": 2, "k": "x"}'
+  - id: delete_null
+    type: io.kestra.plugin.mongodb.Delete
+    connection:
+      uri: "{{ globals['mongodb-uri'] }}"
+    database: nulls_db
+    collection: docs
+    operation: DELETE_MANY
+    filter: '{"k": null}'
