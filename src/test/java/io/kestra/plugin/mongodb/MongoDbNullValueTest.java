@@ -17,8 +17,10 @@ import io.kestra.core.utils.IdUtils;
 import jakarta.inject.Inject;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @KestraTest(startRunner = false, startWorker = false)
 class MongoDbNullValueTest {
@@ -115,6 +117,32 @@ class MongoDbNullValueTest {
             InsertOne.class
         );
         assertNullEntry(insert.getDocument(), "k");
+    }
+
+    @Test
+    void deleteManyWithEmptyMapFilterFails() {
+        var task = Delete.builder()
+            .id(IdUtils.create())
+            .type(Delete.class.getName())
+            .operation(Property.ofValue(Delete.Operation.DELETE_MANY))
+            .filter(Map.of())
+            .build();
+
+        var error = assertThrows(IllegalArgumentException.class, () -> task.run(this.runContext()));
+        assertThat(error.getMessage(), containsString("`filter` must not be an empty map with DELETE_MANY"));
+    }
+
+    @Test
+    void updateWithEmptySetFails() {
+        var task = Update.builder()
+            .id(IdUtils.create())
+            .type(Update.class.getName())
+            .filter(Map.of("_id", 1))
+            .document(Map.of("$set", Map.of()))
+            .build();
+
+        var error = assertThrows(IllegalArgumentException.class, () -> task.run(this.runContext()));
+        assertThat(error.getMessage(), containsString("`$set` must not be empty"));
     }
 
     @Test
