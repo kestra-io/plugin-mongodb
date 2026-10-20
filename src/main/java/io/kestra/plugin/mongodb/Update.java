@@ -135,19 +135,25 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
 
             logger.debug("Updating doc: {} with filter: {}", bsonDocument, bsonFilter);
 
-            runContext.metric(
-                Counter.of(
-                    "updated.count", updateResult.getModifiedCount(),
-                    "database", collection.getNamespace().getDatabaseName(),
-                    "collection", collection.getNamespace().getCollectionName()
-                )
-            );
+            // an unacknowledged write (w=0) carries no counts: every getter on it throws,
+            // including getModifiedCount() used for the metric below
+            boolean acknowledged = updateResult.wasAcknowledged();
+
+            if (acknowledged) {
+                runContext.metric(
+                    Counter.of(
+                        "updated.count", updateResult.getModifiedCount(),
+                        "database", collection.getNamespace().getDatabaseName(),
+                        "collection", collection.getNamespace().getCollectionName()
+                    )
+                );
+            }
 
             return Output.builder()
-                .upsertedId(updateResult.getUpsertedId() != null ? MongoDbService.toIdString(updateResult.getUpsertedId()) : null)
-                .wasAcknowledged(updateResult.wasAcknowledged())
-                .matchedCount(updateResult.getMatchedCount())
-                .modifiedCount(updateResult.getModifiedCount())
+                .upsertedId(acknowledged && updateResult.getUpsertedId() != null ? MongoDbService.toIdString(updateResult.getUpsertedId()) : null)
+                .wasAcknowledged(acknowledged)
+                .matchedCount(acknowledged ? updateResult.getMatchedCount() : 0L)
+                .modifiedCount(acknowledged ? updateResult.getModifiedCount() : null)
                 .build();
         }
     }
@@ -169,7 +175,9 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
                 - String: as is
                 - Int32, Int64, Double or Decimal128: the number
                 - UUID (Binary subtype 4): its canonical string
-                - any other type, including a legacy UUID (Binary subtype 3) or a document: its relaxed MongoDB Extended JSON, such as `{"a": 1}`"""
+                - any other type, including a legacy UUID (Binary subtype 3) or a document: its relaxed MongoDB Extended JSON, such as `{"a": 1}`
+
+                Always null for unacknowledged writes (`w=0`), which have no id to report."""
         )
         @Nullable
         private String upsertedId;
@@ -180,12 +188,14 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
         private Boolean wasAcknowledged;
 
         @Schema(
-            title = "The number of documents matched by the query"
+            title = "The number of documents matched by the query",
+            description = "0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         private final long matchedCount;
 
         @Schema(
-            title = "The number of documents modified by the update"
+            title = "The number of documents modified by the update",
+            description = "Null for unacknowledged writes (`w=0`), which have no counts to report."
         )
         private final Long modifiedCount;
     }
