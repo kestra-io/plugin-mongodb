@@ -4,7 +4,9 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
+import java.math.BigInteger;
 import java.net.URI;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -183,6 +185,45 @@ class LoadTest extends MongoDbContainer {
             assertThat(stored.get("externalId").getBsonType(), is(BsonType.OBJECT_ID));
             assertThat(stored.getDocument("nested").get("count").getBsonType(), is(BsonType.INT64));
             assertThat(stored.getDocument("nested").getArray("ids").get(0).getBsonType(), is(BsonType.OBJECT_ID));
+        }
+    }
+
+    @Test
+    void runWithOffsetDateTimeAndBigIntegerInSecondRecord() throws Exception {
+        String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        BigInteger expectedAmount = new BigInteger("1234567890123456789012345678901234");
+        URI uri = put(
+            List.of(
+                Map.of("k", "first"),
+                Map.of(
+                    "k", "offset",
+                    "createdAt", OffsetDateTime.parse("2024-01-01T10:00:00+02:00"),
+                    "amount", expectedAmount
+                )
+            )
+        );
+        Load load = load(database, "load_offset_datetime", uri).chunk(Property.ofValue(2)).build();
+        RunContext runContext = runContextFactory.of();
+
+        Load.Output runOutput = load.run(runContext);
+
+        assertThat(runOutput.getSize(), is(2L));
+        assertThat(runOutput.getInsertedCount(), is(2));
+        assertThat(metric(runContext, "requests.count"), is(1D));
+
+        try (MongoClient client = getMongoClient()) {
+            var collection = client.getDatabase(database).getCollection("load_offset_datetime", BsonDocument.class);
+            assertThat(collection.countDocuments(), is(2L));
+
+            BsonDocument first = collection.find(Filters.eq("k", "first")).first();
+            BsonDocument second = collection.find(Filters.eq("k", "offset")).first();
+
+            assertThat(first, is(org.hamcrest.Matchers.notNullValue()));
+            assertThat(second, is(org.hamcrest.Matchers.notNullValue()));
+            assertThat(second.get("createdAt").getBsonType(), is(BsonType.DATE_TIME));
+            assertThat(second.getDateTime("createdAt").getValue(), is(1704096000000L));
+            assertThat(second.get("amount").getBsonType(), is(BsonType.DECIMAL128));
+            assertThat(second.getDecimal128("amount").getValue().bigDecimalValue().toBigIntegerExact(), is(expectedAmount));
         }
     }
 

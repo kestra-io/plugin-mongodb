@@ -1,6 +1,10 @@
 package io.kestra.plugin.mongodb;
 
 import java.io.InputStream;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.time.OffsetDateTime;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -11,6 +15,7 @@ import org.bson.BsonObjectId;
 import org.bson.BsonValue;
 import org.bson.Document;
 import org.bson.conversions.Bson;
+import org.bson.types.Decimal128;
 import org.bson.types.ObjectId;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -82,6 +87,10 @@ import static io.kestra.core.utils.Rethrow.throwFunction;
     }
 )
 public class Load extends AbstractLoad {
+    private static final int DECIMAL128_MAX_COEFFICIENT_DIGITS = 34;
+    private static final int DECIMAL128_MAX_ENCODED_EXPONENT = 6111;
+    private static final int DECIMAL128_MAX_ADJUSTED_EXPONENT = 6144;
+
     @Schema(
         title = "Field used as _id",
         description = "If set, value (a 24-character hex string or an `$oid` wrapper) is converted to ObjectId and stored as _id."
@@ -143,7 +152,13 @@ public class Load extends AbstractLoad {
 
     @SuppressWarnings("unchecked")
     private static Object decodeExtendedJson(Object value, long record, String path) throws JsonProcessingException {
-        if (value instanceof Map<?, ?> map) {
+        if (value instanceof OffsetDateTime offsetDateTime) {
+            return offsetDateTime.toInstant();
+        } else if (value instanceof ZonedDateTime zonedDateTime) {
+            return zonedDateTime.toInstant();
+        } else if (value instanceof BigInteger bigInteger) {
+            return decodeBigInteger(bigInteger, record, path);
+        } else if (value instanceof Map<?, ?> map) {
             // the driver's JsonReader only interprets an object as Extended JSON based on its first key
             String firstKey = map.isEmpty() ? null : map.keySet().iterator().next().toString();
             if (firstKey != null && EXTENDED_JSON_WRAPPER_KEYS.contains(firstKey)) {
@@ -169,5 +184,49 @@ public class Load extends AbstractLoad {
             }
         }
         return value;
+    }
+
+    private static Decimal128 decodeBigInteger(BigInteger value, long record, String path) {
+        String digits = value.abs().toString();
+        if (digits.length() - 1 > DECIMAL128_MAX_ADJUSTED_EXPONENT) {
+            throw bigIntegerConversionError(record, path, "value exceeds Decimal128's maximum adjusted exponent of 6144");
+        }
+
+        int trailingZeroCount = 0;
+        for (int i = digits.length() - 1; i > 0 && digits.charAt(i) == '0'; i--) {
+            trailingZeroCount++;
+        }
+
+        // Use removable decimal zeros to reduce the coefficient, stopping at the driver's maximum encoded exponent.
+        int exponent = Math.min(trailingZeroCount, DECIMAL128_MAX_ENCODED_EXPONENT);
+        int coefficientDigits = digits.length() - exponent;
+        if (coefficientDigits > DECIMAL128_MAX_COEFFICIENT_DIGITS) {
+            throw bigIntegerConversionError(record, path, "value requires more than 34 significant digits");
+        }
+
+        BigInteger coefficient = value.divide(BigInteger.TEN.pow(exponent));
+        BigDecimal rescaled = new BigDecimal(coefficient, -exponent);
+        try {
+            Decimal128 decimal128 = new Decimal128(rescaled);
+            if (!decimal128.isFinite() || decimal128.bigDecimalValue().compareTo(new BigDecimal(value)) != 0) {
+                throw bigIntegerConversionError(record, path, "driver conversion did not preserve the original integer");
+            }
+            return decimal128;
+        } catch (NumberFormatException e) {
+            throw bigIntegerConversionError(record, path, "MongoDB's Decimal128 driver rejected the exact representation", e);
+        }
+    }
+
+    private static IllegalArgumentException bigIntegerConversionError(long record, String path, String reason) {
+        return new IllegalArgumentException(
+            "Record " + record + ", field '" + path + "': BigInteger cannot be represented exactly as Decimal128: " + reason
+        );
+    }
+
+    private static IllegalArgumentException bigIntegerConversionError(long record, String path, String reason, NumberFormatException cause) {
+        return new IllegalArgumentException(
+            "Record " + record + ", field '" + path + "': BigInteger cannot be represented exactly as Decimal128: " + reason,
+            cause
+        );
     }
 }

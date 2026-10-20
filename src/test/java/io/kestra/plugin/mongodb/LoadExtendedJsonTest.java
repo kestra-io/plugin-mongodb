@@ -3,14 +3,19 @@ package io.kestra.plugin.mongodb;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.time.OffsetDateTime;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 import org.bson.BsonDocument;
 import org.bson.BsonType;
+import org.bson.BsonValue;
 import org.bson.Document;
 import org.bson.json.JsonParseException;
+import org.bson.types.Decimal128;
 import org.junit.jupiter.api.Test;
 
 import com.google.common.collect.ImmutableMap;
@@ -32,6 +37,16 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @KestraTest
 class LoadExtendedJsonTest {
+    // These are the smallest magnitudes FileSerde reads back as BigInteger instead of a primitive integer.
+    private static final BigInteger SMALL_POSITIVE_INTEGER = BigInteger.valueOf(Long.MAX_VALUE).add(BigInteger.ONE);
+    private static final BigInteger NEGATIVE_INTEGER = BigInteger.valueOf(Long.MIN_VALUE).subtract(BigInteger.ONE);
+    private static final BigInteger THIRTY_FOUR_DIGIT_INTEGER = new BigInteger("1234567890123456789012345678901234");
+    private static final BigInteger INTEGER_WITH_REMOVABLE_TRAILING_ZEROS = new BigInteger("12345678901234567890123456789012340000");
+    private static final BigInteger INTEGER_REQUIRING_ROUNDING = new BigInteger("12345678901234567890123456789012345");
+    private static final BigInteger MAX_ADJUSTED_EXPONENT_INTEGER = BigInteger.TEN.pow(6144);
+    private static final BigInteger INTEGER_OUTSIDE_DECIMAL128_RANGE = BigInteger.TEN.pow(6145);
+    private static final BigInteger NESTED_BIG_INTEGER = new BigInteger("98765432101234567890");
+
     @Inject
     private RunContextFactory runContextFactory;
 
@@ -162,6 +177,190 @@ class LoadExtendedJsonTest {
         assertThat(nested.getMessage(), containsString("$oid"));
     }
 
+    @Test
+    void shouldEncodeOffsetDateTimeAsUtcBsonDate() throws Exception {
+        var encoded = encode(Map.of("createdAt", OffsetDateTime.parse("2024-01-01T10:00:00+02:00")));
+
+        assertThat(encoded.get("createdAt").getBsonType(), is(BsonType.DATE_TIME));
+        assertThat(encoded.getDateTime("createdAt").getValue(), is(1704096000000L));
+    }
+
+    @Test
+    void shouldEncodeNegativeOffsetDateTimeAsUtcBsonDate() throws Exception {
+        var encoded = encode(Map.of("createdAt", OffsetDateTime.parse("2024-01-01T10:00:00-05:00")));
+
+        assertThat(encoded.get("createdAt").getBsonType(), is(BsonType.DATE_TIME));
+        assertThat(encoded.getDateTime("createdAt").getValue(), is(1704121200000L));
+    }
+
+    @Test
+    void shouldEncodeZonedDateTimeAsUtcBsonDate() throws Exception {
+        var encoded = encode(Map.of("createdAt", ZonedDateTime.parse("2024-01-01T10:00:00+01:00[Europe/Paris]")));
+
+        assertThat(encoded.get("createdAt").getBsonType(), is(BsonType.DATE_TIME));
+        assertThat(encoded.getDateTime("createdAt").getValue(), is(1704099600000L));
+    }
+
+    @Test
+    void shouldEncodeEquivalentInstantsAsIdenticalBsonDates() throws Exception {
+        var encoded = encode(
+            Map.of(
+                "offset", OffsetDateTime.parse("2024-01-01T10:00:00+02:00"),
+                "zoned", ZonedDateTime.parse("2024-01-01T09:00:00+01:00[Europe/Paris]")
+            )
+        );
+
+        assertThat(encoded.get("offset").getBsonType(), is(BsonType.DATE_TIME));
+        assertThat(encoded.get("zoned").getBsonType(), is(BsonType.DATE_TIME));
+        assertThat(encoded.getDateTime("offset").getValue(), is(1704096000000L));
+        assertThat(encoded.getDateTime("zoned").getValue(), is(1704096000000L));
+        assertThat(encoded.getDateTime("offset"), is(encoded.getDateTime("zoned")));
+    }
+
+    @Test
+    void shouldUseInstalledDriverRulesForBigIntegerDecimal128Representability() {
+        assertDecimal128RoundTrips(BigInteger.valueOf(12345));
+        assertDecimal128RoundTrips(BigInteger.valueOf(-987654321));
+        assertDecimal128RoundTrips(SMALL_POSITIVE_INTEGER);
+        assertDecimal128RoundTrips(NEGATIVE_INTEGER);
+        assertDecimal128RoundTrips(THIRTY_FOUR_DIGIT_INTEGER);
+        assertDecimal128RoundTrips(INTEGER_WITH_REMOVABLE_TRAILING_ZEROS);
+
+        assertThrows(NumberFormatException.class, () -> decimal128(INTEGER_REQUIRING_ROUNDING));
+        assertThrows(AssertionError.class, () -> decimal128(INTEGER_OUTSIDE_DECIMAL128_RANGE));
+    }
+
+    @Test
+    void shouldEncodeSmallPositiveBigIntegerAsDecimal128() throws Exception {
+        var encoded = encode(Map.of("amount", SMALL_POSITIVE_INTEGER));
+
+        assertDecimal128(encoded.get("amount"), SMALL_POSITIVE_INTEGER);
+    }
+
+    @Test
+    void shouldEncodeNegativeBigIntegerAsDecimal128() throws Exception {
+        var encoded = encode(Map.of("amount", NEGATIVE_INTEGER));
+
+        assertDecimal128(encoded.get("amount"), NEGATIVE_INTEGER);
+    }
+
+    @Test
+    void shouldEncodeThirtyFourDigitBigIntegerAsDecimal128() throws Exception {
+        var encoded = encode(Map.of("amount", THIRTY_FOUR_DIGIT_INTEGER));
+
+        assertDecimal128(encoded.get("amount"), THIRTY_FOUR_DIGIT_INTEGER);
+    }
+
+    @Test
+    void shouldEncodeBigIntegerWithRemovableTrailingZerosAsDecimal128() throws Exception {
+        var encoded = encode(Map.of("amount", INTEGER_WITH_REMOVABLE_TRAILING_ZEROS));
+
+        assertDecimal128(encoded.get("amount"), INTEGER_WITH_REMOVABLE_TRAILING_ZEROS);
+    }
+
+    @Test
+    void shouldEncodeBigIntegerAtMaximumAdjustedExponentAsDecimal128() throws Exception {
+        var encoded = encode(Map.of("amount", MAX_ADJUSTED_EXPONENT_INTEGER));
+
+        assertDecimal128(encoded.get("amount"), MAX_ADJUSTED_EXPONENT_INTEGER);
+    }
+
+    @Test
+    void shouldRejectBigIntegerRequiringPrecisionLossWithRecordAndField() {
+        var e = assertThrows(IllegalArgumentException.class, () -> encode(Map.of("amount", INTEGER_REQUIRING_ROUNDING)));
+
+        assertThat(e.getMessage(), containsString("Record 1, field 'amount'"));
+        assertThat(e.getMessage(), containsString("Decimal128"));
+    }
+
+    @Test
+    void shouldRejectBigIntegerOutsideDecimal128RangeWithRecordAndField() {
+        var e = assertThrows(IllegalArgumentException.class, () -> encode(Map.of("amount", INTEGER_OUTSIDE_DECIMAL128_RANGE)));
+
+        assertThat(e.getMessage(), containsString("Record 1, field 'amount'"));
+        assertThat(e.getMessage(), containsString("Decimal128"));
+    }
+
+    @Test
+    void shouldEncodeOffsetDateTimeInsideNestedMap() throws Exception {
+        var encoded = encode(Map.of("nested", Map.of("createdAt", OffsetDateTime.parse("2024-01-01T10:00:00+02:00"))));
+
+        var nested = encoded.getDocument("nested");
+        assertThat(nested.get("createdAt").getBsonType(), is(BsonType.DATE_TIME));
+        assertThat(nested.getDateTime("createdAt").getValue(), is(1704096000000L));
+    }
+
+    @Test
+    void shouldEncodeOffsetDateTimeInsideNestedList() throws Exception {
+        var encoded = encode(Map.of("nested", List.of(OffsetDateTime.parse("2024-01-01T10:00:00+02:00"))));
+
+        var nested = encoded.getArray("nested");
+        assertThat(nested.get(0).getBsonType(), is(BsonType.DATE_TIME));
+        assertThat(nested.get(0).asDateTime().getValue(), is(1704096000000L));
+    }
+
+    @Test
+    void shouldEncodeOffsetDateTimeInsideListOfNestedMaps() throws Exception {
+        var encoded = encode(
+            Map.of("nested", List.of(Map.of("createdAt", OffsetDateTime.parse("2024-01-01T10:00:00+02:00"))))
+        );
+
+        var nested = encoded.getArray("nested").get(0).asDocument();
+        assertThat(nested.get("createdAt").getBsonType(), is(BsonType.DATE_TIME));
+        assertThat(nested.getDateTime("createdAt").getValue(), is(1704096000000L));
+    }
+
+    @Test
+    void shouldEncodeBigIntegerInsideNestedMap() throws Exception {
+        var encoded = encode(Map.of("nested", Map.of("amount", NESTED_BIG_INTEGER)));
+
+        assertDecimal128(encoded.getDocument("nested").get("amount"), NESTED_BIG_INTEGER);
+    }
+
+    @Test
+    void shouldEncodeBigIntegerInsideNestedList() throws Exception {
+        var encoded = encode(Map.of("nested", List.of(NESTED_BIG_INTEGER)));
+
+        assertDecimal128(encoded.getArray("nested").get(0), NESTED_BIG_INTEGER);
+    }
+
+    @Test
+    void shouldEncodeBigIntegerInsideListOfNestedMaps() throws Exception {
+        var encoded = encode(Map.of("nested", List.of(Map.of("amount", NESTED_BIG_INTEGER))));
+
+        assertDecimal128(encoded.getArray("nested").get(0).asDocument().get("amount"), NESTED_BIG_INTEGER);
+    }
+
+    @Test
+    void shouldRejectInvalidBigIntegerInSecondRecordWithNestedFieldPath() {
+        var e = assertThrows(
+            IllegalArgumentException.class,
+            () -> encode(
+                Load.builder().build(),
+                List.of(
+                    Map.of("name", "valid"),
+                    Map.of("nested", Map.of("items", List.of(INTEGER_REQUIRING_ROUNDING)))
+                )
+            )
+        );
+
+        assertThat(e.getMessage(), containsString("Record 2, field 'nested.items[0]'"));
+        assertThat(e.getMessage(), containsString("Decimal128"));
+    }
+
+    private static void assertDecimal128(BsonValue value, BigInteger expected) {
+        assertThat(value.getBsonType(), is(BsonType.DECIMAL128));
+        assertThat(value.asDecimal128().getValue().bigDecimalValue().toBigIntegerExact(), is(expected));
+    }
+
+    private static void assertDecimal128RoundTrips(BigInteger value) {
+        assertThat(decimal128(value).bigDecimalValue().toBigIntegerExact(), is(value));
+    }
+
+    private static Decimal128 decimal128(BigInteger value) {
+        return new Decimal128(new BigDecimal(value));
+    }
+
     private BsonDocument encode(Map<String, Object> record) throws Exception {
         return encode(Load.builder().build(), List.of(record)).getFirst();
     }
@@ -173,7 +372,13 @@ class LoadExtendedJsonTest {
         }
 
         return load.source(runContextFactory.of(), new ByteArrayInputStream(output.toByteArray()))
-            .map(model -> ((Document) ((InsertOneModel<?>) model).getDocument()).toBsonDocument(BsonDocument.class, MongoClientSettings.getDefaultCodecRegistry()))
+            .map(model ->
+            {
+                var document = (Document) ((InsertOneModel<?>) model).getDocument();
+                var bsonDocument = document.toBsonDocument(BsonDocument.class, MongoClientSettings.getDefaultCodecRegistry());
+                bsonDocument.size(); // BsonDocumentWrapper encodes lazily; force the driver codecs while inside this helper.
+                return bsonDocument;
+            })
             .collectList()
             .block();
     }
