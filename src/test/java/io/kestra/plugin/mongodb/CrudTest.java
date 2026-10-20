@@ -1,9 +1,11 @@
 package io.kestra.plugin.mongodb;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import org.bson.Document;
 import org.junit.jupiter.api.Test;
 
 import com.google.common.collect.ImmutableMap;
@@ -149,8 +151,91 @@ class CrudTest extends MongoDbContainer {
         assertThat(insertOneWithId(ImmutableMap.of("a", 1, "b", "x")), is("{\"a\": 1, \"b\": \"x\"}"));
     }
 
+    @Test
+    void deleteManyWithANullFilterLeavesOtherDocuments() throws Exception {
+        var database = databaseName();
+        try (var client = getMongoClient()) {
+            var collection = client.getDatabase(database).getCollection("docs");
+            collection.insertOne(new Document("_id", 1).append("k", null));
+            collection.insertOne(new Document("_id", 2));
+            collection.insertOne(new Document("_id", 3).append("k", "x"));
+        }
+
+        var filter = new LinkedHashMap<String, Object>();
+        filter.put("k", null);
+        var output = Delete.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("docs"))
+            .operation(Property.ofValue(Delete.Operation.DELETE_MANY))
+            .filter(filter)
+            .build()
+            .run(this.runContextFactory.of(Map.of()));
+
+        assertThat(output.getDeletedCount(), is(2L));
+        try (var client = getMongoClient()) {
+            var left = client.getDatabase(database).getCollection("docs").find().first();
+            assertThat(left.getInteger("_id"), is(3));
+        }
+    }
+
+    @Test
+    void updateOneSetsAFieldToNull() throws Exception {
+        var database = databaseName();
+        try (var client = getMongoClient()) {
+            client.getDatabase(database).getCollection("docs").insertOne(new Document("_id", 1).append("k", "x"));
+        }
+
+        var set = new LinkedHashMap<String, Object>();
+        set.put("k", null);
+        var document = new LinkedHashMap<String, Object>();
+        document.put("$set", set);
+        var output = Update.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("docs"))
+            .operation(Property.ofValue(Update.Operation.UPDATE_ONE))
+            .filter(Map.of("_id", 1))
+            .document(document)
+            .build()
+            .run(this.runContextFactory.of(Map.of()));
+
+        assertThat(output.getModifiedCount(), is(1L));
+        try (var client = getMongoClient()) {
+            var stored = client.getDatabase(database).getCollection("docs").find(new Document("_id", 1)).first();
+            assertThat(stored.containsKey("k"), is(true));
+            assertThat(stored.get("k"), is((Object) null));
+        }
+    }
+
+    @Test
+    void insertOneStoresANullField() throws Exception {
+        var database = databaseName();
+        var document = new LinkedHashMap<String, Object>();
+        document.put("_id", 10);
+        document.put("k", null);
+        var output = InsertOne.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("docs"))
+            .document(document)
+            .build()
+            .run(this.runContextFactory.of(Map.of()));
+
+        assertThat(output.getWasAcknowledged(), is(true));
+        try (var client = getMongoClient()) {
+            var stored = client.getDatabase(database).getCollection("docs").find(new Document("_id", 10)).first();
+            assertThat(stored.containsKey("k"), is(true));
+            assertThat(stored.get("k"), is((Object) null));
+        }
+    }
+
+    private static String databaseName() {
+        return "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+    }
+
     private String insertOneWithId(Object id) throws Exception {
-        var database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        var database = databaseName();
 
         var insert = InsertOne.builder()
             .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
