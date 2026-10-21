@@ -114,11 +114,26 @@ class TriggerWatermarkTest extends MongoDbContainer {
     }
 
     @Test
+    void tiedDocumentsWhoseIdLooksLikeAFieldPathAreDeliveredOnce() throws Exception {
+        insert(
+            new Document("_id", "$a").append("updatedAt", at(1)),
+            new Document("_id", "$b").append("updatedAt", at(1)),
+            new Document("_id", new Document("k", "$x")).append("updatedAt", at(1))
+        );
+        var trigger = trigger("updatedAt").limit(Property.ofValue(1)).build();
+
+        assertThat(poll(trigger), contains("$a"));
+        assertThat(poll(trigger), contains("$b"));
+        assertThat(poll(trigger), contains(Map.of("k", "$x")));
+        assertThat(poll(trigger), empty());
+    }
+
+    @Test
     void tiedDocumentsAreDeliveredInMongoDbOrderWhateverTheTypeOfTheirId() throws Exception {
-        // inserted in the reverse of MongoDB's order between types
+        // inserted in the reverse of MongoDB's order between types, where NaN comes before the other numbers
         List<Object> ids = Arrays.asList(
             new MaxKey(), new Code("x"), new BsonTimestamp(1, 1), at(1), true, new ObjectId(), new Binary(new byte[] { 1 }),
-            new Document("k", 1), new Symbol("b"), "a", Decimal128.parse("3.5"), 2.5, 2L, 1, null, new MinKey()
+            new Document("k", 1), new Symbol("b"), "a", Decimal128.parse("3.5"), 2.5, 2L, 1, Double.NaN, null, new MinKey()
         );
         insert(IntStream.range(0, ids.size()).mapToObj(i -> new Document("_id", ids.get(i)).append("updatedAt", at(1)).append("n", i)).toArray(Document[]::new));
 
