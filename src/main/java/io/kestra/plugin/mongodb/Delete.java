@@ -1,5 +1,8 @@
 package io.kestra.plugin.mongodb;
 
+import java.util.Map;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.bson.BsonDocument;
 import org.bson.conversions.Bson;
 import org.slf4j.Logger;
@@ -65,9 +68,14 @@ import lombok.experimental.SuperBuilder;
 public class Delete extends AbstractTask implements RunnableTask<Delete.Output> {
     @Schema(
         title = "Query filter",
-        description = "BSON string or map rendered before execution."
+        description = """
+            BSON string or map rendered before execution.
+            Required with DELETE_MANY: an empty map filter fails, set `filter: '{}'` (string) to delete every document in the collection.
+            A null map entry is dropped when the flow is parsed; pass a JSON string when a null is needed, for example `'{"deletedAt": null}'`.
+            """
     )
     @PluginProperty(dynamic = true, group = "processing")
+    @JsonInclude(value = JsonInclude.Include.NON_NULL, content = JsonInclude.Include.ALWAYS)
     private Object filter;
 
     @Schema(
@@ -83,13 +91,22 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
     public Delete.Output run(RunContext runContext) throws Exception {
         Logger logger = runContext.logger();
 
+        var rOperation = runContext.render(this.operation).as(Operation.class).orElseThrow();
+        if (this.filter == null && Operation.DELETE_MANY.equals(rOperation)) {
+            throw new IllegalArgumentException("`filter` is required with DELETE_MANY: set `filter: '{}'` to delete every document in the collection.");
+        }
+
+        BsonDocument bsonFilter = MongoDbService.toDocument(runContext, this.filter);
+        // An empty map can come from a null dropped in core, so only the string form may delete everything.
+        if (Operation.DELETE_MANY.equals(rOperation) && this.filter instanceof Map && bsonFilter.isEmpty()) {
+            throw new IllegalArgumentException("`filter` must not be an empty map with DELETE_MANY: it deletes every document and can come from a dropped null. Set `filter: '{}'` to delete every document in the collection.");
+        }
+
         try (MongoClient client = this.client(runContext)) {
             MongoCollection<Bson> collection = this.collection(runContext, client);
 
-            BsonDocument bsonFilter = MongoDbService.toDocument(runContext, this.filter);
-
             DeleteResult deleteResult;
-            if (Operation.DELETE_ONE.equals(runContext.render(this.operation).as(Operation.class).orElseThrow())) {
+            if (Operation.DELETE_ONE.equals(rOperation)) {
                 deleteResult = collection.deleteOne(bsonFilter);
             } else {
                 deleteResult = collection.deleteMany(bsonFilter);

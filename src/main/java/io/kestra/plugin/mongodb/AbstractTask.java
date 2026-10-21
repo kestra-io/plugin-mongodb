@@ -73,7 +73,7 @@ public abstract class AbstractTask extends Task implements WorkerJobLifecycle {
      */
     protected MongoClient client(RunContext runContext) throws IllegalVariableEvaluationException {
         MongoDbSessionKiller sessionKiller = new MongoDbSessionKiller(this.connection.clientSettings(runContext));
-        MongoClient mongoClient = sessionKiller.client();
+        MongoClient mongoClient = this.connection.client(runContext, sessionKiller);
         this.killAction.set(() ->
         {
             closeQuietly(mongoClient);

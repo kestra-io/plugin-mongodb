@@ -1,5 +1,6 @@
 package io.kestra.plugin.mongodb;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.bson.BsonDocument;
 import org.bson.conversions.Bson;
 import org.slf4j.Logger;
@@ -92,18 +93,27 @@ import lombok.experimental.SuperBuilder;
 public class Update extends AbstractTask implements RunnableTask<Update.Output> {
     @Schema(
         title = "Update payload or replacement document",
-        description = "BSON string or map rendered before execution."
+        description = """
+            BSON string or map rendered before execution.
+            An empty `$set` fails instead of reporting success on a no-op.
+            A null map entry is dropped when the flow is parsed; pass a JSON string when a null is needed, for example `'{"$set": {"k": null}}'`.
+            """
     )
     @PluginProperty(dynamic = true, group = "main")
     @NotNull
+    @JsonInclude(value = JsonInclude.Include.NON_NULL, content = JsonInclude.Include.ALWAYS)
     private Object document;
 
     @Schema(
         title = "Query filter",
-        description = "BSON string or map rendered before execution; selects documents to update."
+        description = """
+            BSON string or map rendered before execution; selects documents to update.
+            A null map entry is dropped when the flow is parsed; pass a JSON string when a null is needed, for example `'{"deletedAt": null}'`.
+            """
     )
     @PluginProperty(dynamic = true, group = "main")
     @NotNull
+    @JsonInclude(value = JsonInclude.Include.NON_NULL, content = JsonInclude.Include.ALWAYS)
     private Object filter;
 
     @Schema(
@@ -118,16 +128,22 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
     public Update.Output run(RunContext runContext) throws Exception {
         Logger logger = runContext.logger();
 
+        var rOperation = runContext.render(this.operation).as(Operation.class).orElseThrow();
+
+        BsonDocument bsonDocument = MongoDbService.toDocument(runContext, this.document);
+        BsonDocument bsonFilter = MongoDbService.toDocument(runContext, this.filter);
+        // An empty $set can come from a null dropped in core, so fail instead of a silent no-op.
+        if (bsonDocument.containsKey("$set") && bsonDocument.get("$set").isDocument() && bsonDocument.getDocument("$set").isEmpty()) {
+            throw new IllegalArgumentException("`$set` must not be empty: it changes nothing and can come from a dropped null. Pass `document` as a JSON string when a null is needed, for example '{\"$set\": {\"k\": null}}'.");
+        }
+
         try (MongoClient client = this.client(runContext)) {
             MongoCollection<Bson> collection = this.collection(runContext, client);
 
-            BsonDocument bsonDocument = MongoDbService.toDocument(runContext, this.document);
-            BsonDocument bsonFilter = MongoDbService.toDocument(runContext, this.filter);
-
             UpdateResult updateResult;
-            if (Operation.REPLACE_ONE.equals(runContext.render(operation).as(Operation.class).orElseThrow())) {
+            if (Operation.REPLACE_ONE.equals(rOperation)) {
                 updateResult = collection.replaceOne(bsonFilter, bsonDocument);
-            } else if (Operation.UPDATE_ONE.equals(runContext.render(operation).as(Operation.class).orElseThrow())) {
+            } else if (Operation.UPDATE_ONE.equals(rOperation)) {
                 updateResult = collection.updateOne(bsonFilter, bsonDocument);
             } else {
                 updateResult = collection.updateMany(bsonFilter, bsonDocument);

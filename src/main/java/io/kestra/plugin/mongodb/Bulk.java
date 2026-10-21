@@ -39,7 +39,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 @NoArgsConstructor
 @Schema(
     title = "Run MongoDB bulkWrite from NDJSON",
-    description = "Reads newline-delimited bulk operations from internal storage and executes MongoDB bulkWrite. Supports insertOne, updateOne, updateMany, replaceOne, deleteOne and deleteMany in the db.collection.bulkWrite() format (https://www.mongodb.com/docs/manual/reference/method/db.collection.bulkWrite/). insertOne also accepts the legacy flat form where the body is the document itself; a body whose only field is an object named `document` is read as the bulkWrite form. Inherits chunking from AbstractLoad (default 1000 per bulk request)."
+    description = "Reads newline-delimited bulk operations from internal storage and executes MongoDB bulkWrite. Supports insertOne, updateOne, updateMany, replaceOne, deleteOne and deleteMany in the db.collection.bulkWrite() format (https://www.mongodb.com/docs/manual/reference/method/db.collection.bulkWrite/). insertOne also accepts the legacy flat form where the body is the document itself; a body whose only field is an object named `document` is read as the bulkWrite form. Inherits chunking from AbstractLoad (default 1000 per bulk request). When an operation fails, the task fails with its number (its line in the file), and its outputs count the operations applied before it, which are kept. A retry runs every line again, so it is only safe for operations that change nothing more when repeated, such as `replaceOne`, or `updateOne` with `$set`, using `upsert: true`: an `insertOne` is inserted again, or fails with a duplicate key error if it sets `_id`, `$inc` or `$push` updates are applied twice, and a `deleteOne` whose filter matches several documents deletes another one."
 )
 @Plugin(
     examples = {
@@ -72,7 +72,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
             name = "records",
             type = Counter.TYPE,
             unit = "count",
-            description = "Number of documents processed in the bulk operation"
+            description = "Number of documents processed in the bulk operation; when a write fails, those applied before it"
         ),
         @Metric(
             name = "requests.count",
@@ -101,7 +101,7 @@ public class Bulk extends AbstractLoad {
 
                 WriteModel<Bson> docWriteRequest = switch (operation.getKey()) {
                     case "insertOne" -> new InsertOneModel<>(
-                        getInsertOneDocument(operation.getValue().asDocument())
+                        MongoDbService.withId(getInsertOneDocument(operation.getValue().asDocument()))
                     );
                     case "replaceOne" -> new ReplaceOneModel<>(
                         operation.getValue().asDocument().get("filter").asDocument(),

@@ -2,6 +2,7 @@ package io.kestra.plugin.mongodb;
 
 import java.util.Objects;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.bson.BsonDocument;
 import org.bson.conversions.Bson;
 import org.slf4j.Logger;
@@ -85,10 +86,14 @@ import lombok.experimental.SuperBuilder;
 public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Output> {
     @Schema(
         title = "Document to insert",
-        description = "BSON string or map rendered before execution."
+        description = """
+            BSON string or map rendered before execution.
+            A null map entry is dropped when the flow is parsed; pass a JSON string when a null is needed, for example `'{"_id": 1, "k": null}'`.
+            """
     )
     @PluginProperty(dynamic = true, group = "main")
     @NotNull
+    @JsonInclude(value = JsonInclude.Include.NON_NULL, content = JsonInclude.Include.ALWAYS)
     private Object document;
 
     @Override
@@ -99,7 +104,7 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
             MongoCollection<Bson> collection = this.collection(runContext, client);
 
             BsonDocument bsonDocument = MongoDbService.toDocument(runContext, this.document);
-            InsertOneResult insertOneResult = collection.insertOne(bsonDocument);
+            InsertOneResult insertOneResult = collection.insertOne(MongoDbService.withId(bsonDocument));
 
             logger.info("Insert doc: {}", bsonDocument);
 

@@ -42,17 +42,6 @@ final class MongoDbSessionKiller implements CommandListener {
         this.settings = settings;
     }
 
-    /**
-     * Creates a client whose sessions are recorded by this instance.
-     */
-    MongoClient client() {
-        return MongoClients.create(
-            MongoClientSettings.builder(this.settings)
-                .addCommandListener(this)
-                .build()
-        );
-    }
-
     @Override
     public void commandStarted(CommandStartedEvent event) {
         // the command document is only readable during this callback, the binary id is a copy
