@@ -104,12 +104,15 @@ final class TriggerWatermark implements Find.QueryHook {
         } else if (field.equals(ID)) {
             after = new BsonDocument(ID, new BsonDocument("$gt", lastValue));
         } else {
+            // the query $gt only matches an _id of the position's type, while the aggregation one compares values of different types
+            // in the order documents are sorted in; $literal keeps an _id such as "$a" from being read as a field path
+            var idAfter = new BsonDocument("$gt", new BsonArray(List.of(new BsonString("$" + ID), new BsonDocument("$literal", lastId))));
             after = new BsonDocument(
                 "$or",
                 new BsonArray(
                     List.of(
                         new BsonDocument(field, new BsonDocument("$gt", lastValue)),
-                        new BsonDocument(field, lastValue).append(ID, new BsonDocument("$gt", lastId))
+                        new BsonDocument(field, lastValue).append("$expr", idAfter)
                     )
                 )
             );
