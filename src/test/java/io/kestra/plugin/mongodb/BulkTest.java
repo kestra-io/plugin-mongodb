@@ -236,6 +236,33 @@ class BulkTest extends MongoDbContainer {
     }
 
     @Test
+    void insertOneWithNestedIdWrittenLast() throws Exception {
+        var database = newDatabase();
+
+        // a nested _id as the last field name used to fail the whole chunk, the valid first record included
+        var output = runBulk(
+            database, "nested_id",
+            "{\"insertOne\": {\"document\": {\"k\": \"first\"}}}",
+            "{\"insertOne\": {\"document\": {\"k\": \"last\", \"customer\": {\"_id\": 42}}}}",
+            "{\"insertOne\": {\"k\": \"flat\", \"items\": [{\"q\": 1, \"_id\": 7}]}}"
+        );
+
+        assertThat(output.getInsertedCount(), is(3));
+        var stored = findAll(database, "nested_id");
+        for (var document : stored) {
+            assertThat(document.remove("_id"), instanceOf(ObjectId.class));
+        }
+        assertThat(
+            stored,
+            containsInAnyOrder(
+                new Document("k", "first"),
+                new Document("k", "last").append("customer", new Document("_id", 42)),
+                new Document("k", "flat").append("items", List.of(new Document("q", 1).append("_id", 7)))
+            )
+        );
+    }
+
+    @Test
     void upsertsAreCounted() throws Exception {
         var database = newDatabase();
         try (MongoClient client = getMongoClient()) {

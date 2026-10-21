@@ -27,6 +27,7 @@ import io.kestra.core.models.tasks.RunnableTask;
 import io.kestra.core.models.tasks.common.FetchType;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.FileSerde;
+import io.kestra.core.serializers.JacksonMapper;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
@@ -124,7 +125,11 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Output> {
     @Schema(
         title = "Aggregation pipeline",
-        description = "List of stages as BSON string/array or map list rendered before execution."
+        description = """
+            List of stages as a BSON string or a map list, rendered before execution.
+            A null inside a map stage is dropped when the flow is parsed.
+            Pass the pipeline as a JSON string when a stage needs a null, for example `[{"$match": {"k": null}}]`.
+            """
     )
     @NotNull
     Property<List<Map<String, Object>>> pipeline;
@@ -161,6 +166,22 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
     @PluginProperty(group = "destination")
     private Property<FetchType> store = Property.ofValue(FetchType.FETCH);
 
+    List<Map<String, Object>> renderedStages(RunContext runContext) throws Exception {
+        // Property.toString() can print a held list as [{ $match=... }]; convertValue writes the expression.
+        var raw = JacksonMapper.ofJson().convertValue(this.pipeline, String.class);
+        if (raw != null) {
+            raw = raw.trim();
+            if (raw.startsWith("[")) {
+                var stages = new ArrayList<Map<String, Object>>();
+                for (var stage : MongoDbService.readMapList(raw)) {
+                    stages.add(runContext.render(stage));
+                }
+                return stages;
+            }
+        }
+        return runContext.render(this.pipeline).asList(Map.class);
+    }
+
     @Override
     public Aggregate.Output run(RunContext runContext) throws Exception {
         Logger logger = runContext.logger();
@@ -170,8 +191,7 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
 
             List<Bson> pipelineStages = new ArrayList<>();
             if (this.pipeline != null) {
-                List<Map<String, Object>> renderedPipeline = runContext.render(this.pipeline).asList(Map.class);
-                for (Map<String, Object> stage : renderedPipeline) {
+                for (var stage : this.renderedStages(runContext)) {
                     BsonDocument bsonStage = MongoDbService.toDocument(runContext, stage);
                     pipelineStages.add(bsonStage);
                     logger.debug("Pipeline stage: {}", bsonStage);

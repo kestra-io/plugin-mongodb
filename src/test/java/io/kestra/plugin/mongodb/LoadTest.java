@@ -240,6 +240,37 @@ class LoadTest extends MongoDbContainer {
     }
 
     @Test
+    void runWithNestedIdWrittenLast() throws Exception {
+        var database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        // a nested _id as the last field name used to fail the whole chunk, the valid first record included
+        var uri = put(
+            List.of(
+                ImmutableMap.of("k", "first"),
+                ImmutableMap.of("k", "last", "customer", ImmutableMap.of("name", "ann", "_id", "c-42")),
+                ImmutableMap.of("k", "array", "items", List.of(ImmutableMap.of("q", "a", "_id", "i-7")))
+            )
+        );
+
+        var output = load(database, "nested_id", uri).build().run(runContextFactory.of());
+
+        assertThat(output.getInsertedCount(), is(3));
+        try (var client = getMongoClient()) {
+            var stored = client.getDatabase(database).getCollection("nested_id").find().into(new ArrayList<>());
+            for (var document : stored) {
+                assertThat(document.remove("_id"), instanceOf(ObjectId.class));
+            }
+            assertThat(
+                stored,
+                containsInAnyOrder(
+                    new Document("k", "first"),
+                    new Document("k", "last").append("customer", new Document("name", "ann").append("_id", "c-42")),
+                    new Document("k", "array").append("items", List.of(new Document("q", "a").append("_id", "i-7")))
+                )
+            );
+        }
+    }
+
+    @Test
     void failedWriteReportsTheRecordAndWhatWasApplied() throws Exception {
         RunContext runContext = runContextFactory.of();
         String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
