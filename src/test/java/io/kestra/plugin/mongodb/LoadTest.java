@@ -41,6 +41,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.startsWith;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -127,7 +128,7 @@ class LoadTest extends MongoDbContainer {
                 .find()
                 .first();
 
-            assertThat(stored, is(org.hamcrest.Matchers.notNullValue()));
+            assertThat(stored, is(notNullValue()));
             assertThat(stored.get("_id"), is(expectedId));
             assertThat(stored.containsKey("id"), is(false));
             assertThat(stored.getString("name"), is("john"));
@@ -179,7 +180,7 @@ class LoadTest extends MongoDbContainer {
                 .find()
                 .first();
 
-            assertThat(stored, is(org.hamcrest.Matchers.notNullValue()));
+            assertThat(stored, is(notNullValue()));
             assertThat(stored.getObjectId("_id").getValue(), is(expectedId));
             assertThat(stored.containsKey("id"), is(false));
             assertThat(stored.get("createdAt").getBsonType(), is(BsonType.DATE_TIME));
@@ -220,8 +221,8 @@ class LoadTest extends MongoDbContainer {
             var first = collection.find(Filters.eq("k", "first")).first();
             var second = collection.find(Filters.eq("k", "offset")).first();
 
-            assertThat(first, is(org.hamcrest.Matchers.notNullValue()));
-            assertThat(second, is(org.hamcrest.Matchers.notNullValue()));
+            assertThat(first, is(notNullValue()));
+            assertThat(second, is(notNullValue()));
             assertThat(second.get("createdAt").getBsonType(), is(BsonType.DATE_TIME));
             assertThat(second.getDateTime("createdAt").getValue(), is(1704096000000L));
             assertThat(second.get("amount").getBsonType(), is(BsonType.DECIMAL128));
