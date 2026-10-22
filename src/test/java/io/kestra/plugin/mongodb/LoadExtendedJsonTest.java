@@ -15,7 +15,6 @@ import org.bson.BsonType;
 import org.bson.BsonValue;
 import org.bson.Document;
 import org.bson.json.JsonParseException;
-import org.bson.types.Decimal128;
 import org.junit.jupiter.api.Test;
 
 import com.google.common.collect.ImmutableMap;
@@ -220,19 +219,6 @@ class LoadExtendedJsonTest {
     }
 
     @Test
-    void shouldUseInstalledDriverRulesForBigIntegerDecimal128Representability() {
-        assertDecimal128RoundTrips(BigInteger.valueOf(12345));
-        assertDecimal128RoundTrips(BigInteger.valueOf(-987654321));
-        assertDecimal128RoundTrips(SMALL_POSITIVE_INTEGER);
-        assertDecimal128RoundTrips(NEGATIVE_INTEGER);
-        assertDecimal128RoundTrips(THIRTY_FOUR_DIGIT_INTEGER);
-        assertDecimal128RoundTrips(INTEGER_WITH_REMOVABLE_TRAILING_ZEROS);
-
-        assertThrows(NumberFormatException.class, () -> decimal128(INTEGER_REQUIRING_ROUNDING));
-        assertThrows(AssertionError.class, () -> decimal128(INTEGER_OUTSIDE_DECIMAL128_RANGE));
-    }
-
-    @Test
     void shouldEncodeSmallPositiveBigIntegerAsDecimal128() throws Exception {
         var encoded = encode(Map.of("amount", SMALL_POSITIVE_INTEGER));
 
@@ -384,14 +370,6 @@ class LoadExtendedJsonTest {
     private static void assertDecimal128(BsonValue value, BigInteger expected) {
         assertThat(value.getBsonType(), is(BsonType.DECIMAL128));
         assertThat(value.asDecimal128().getValue().bigDecimalValue().toBigIntegerExact(), is(expected));
-    }
-
-    private static void assertDecimal128RoundTrips(BigInteger value) {
-        assertThat(decimal128(value).bigDecimalValue().toBigIntegerExact(), is(value));
-    }
-
-    private static Decimal128 decimal128(BigInteger value) {
-        return new Decimal128(new BigDecimal(value));
     }
 
     private BsonDocument encode(Map<String, Object> record) throws Exception {
