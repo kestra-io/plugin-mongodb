@@ -285,7 +285,9 @@ class LoadExtendedJsonTest {
         var e = assertThrows(IllegalArgumentException.class, () -> encode(Map.of("amount", INTEGER_REQUIRING_ROUNDING)));
 
         assertThat(e.getMessage(), containsString("Record 1, field 'amount'"));
-        assertThat(e.getMessage(), containsString("Decimal128"));
+        assertThat(e.getMessage(), containsString("MongoDB's Decimal128 driver rejected the exact representation"));
+        assertThat(e.getMessage(), containsString("store it as a string to keep every digit"));
+        assertThat(e.getCause(), instanceOf(NumberFormatException.class));
     }
 
     @Test
@@ -296,7 +298,8 @@ class LoadExtendedJsonTest {
             var e = assertThrows(IllegalArgumentException.class, () -> encode(Map.of("amount", value)));
 
             assertThat(e.getMessage(), containsString("Record 1, field 'amount'"));
-            assertThat(e.getMessage(), containsString("Decimal128"));
+            assertThat(e.getMessage(), containsString("value exceeds Decimal128's maximum finite integer magnitude"));
+            assertThat(e.getMessage(), containsString("store it as a string to keep every digit"));
         }
     }
 
@@ -305,7 +308,8 @@ class LoadExtendedJsonTest {
         var e = assertThrows(IllegalArgumentException.class, () -> encode(Map.of("amount", INTEGER_OUTSIDE_DECIMAL128_RANGE)));
 
         assertThat(e.getMessage(), containsString("Record 1, field 'amount'"));
-        assertThat(e.getMessage(), containsString("Decimal128"));
+        assertThat(e.getMessage(), containsString("value exceeds Decimal128's maximum finite integer magnitude"));
+        assertThat(e.getMessage(), containsString("store it as a string to keep every digit"));
     }
 
     @Test
@@ -372,7 +376,9 @@ class LoadExtendedJsonTest {
         );
 
         assertThat(e.getMessage(), containsString("Record 2, field 'nested.items[0]'"));
-        assertThat(e.getMessage(), containsString("Decimal128"));
+        assertThat(e.getMessage(), containsString("MongoDB's Decimal128 driver rejected the exact representation"));
+        assertThat(e.getMessage(), containsString("store it as a string to keep every digit"));
+        assertThat(e.getCause(), instanceOf(NumberFormatException.class));
     }
 
     private static void assertDecimal128(BsonValue value, BigInteger expected) {

@@ -199,14 +199,13 @@ public class Load extends AbstractLoad {
     }
 
     private static IllegalArgumentException bigIntegerConversionError(long record, String path, String reason) {
-        return new IllegalArgumentException(
-            "Record " + record + ", field '" + path + "': BigInteger cannot be represented exactly as Decimal128: " + reason
-        );
+        return bigIntegerConversionError(record, path, reason, null);
     }
 
     private static IllegalArgumentException bigIntegerConversionError(long record, String path, String reason, NumberFormatException cause) {
         return new IllegalArgumentException(
-            "Record " + record + ", field '" + path + "': BigInteger cannot be represented exactly as Decimal128: " + reason,
+            "Record " + record + ", field '" + path + "': BigInteger cannot be represented exactly as Decimal128: " + reason +
+                "; store it as a string to keep every digit",
             cause
         );
     }
