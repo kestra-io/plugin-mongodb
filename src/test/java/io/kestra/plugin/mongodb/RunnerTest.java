@@ -44,6 +44,8 @@ class RunnerTest extends MongoDbContainer {
     @BeforeEach
     void setupTestData() {
         try (MongoClient client = MongoClients.create(connectionUri)) {
+            client.getDatabase("nulls_db").getCollection("docs").drop();
+
             // Setup data for sales_db.transactions
             MongoDatabase salesDb = client.getDatabase("sales_db");
             MongoCollection<Document> transactions = salesDb.getCollection("transactions");
@@ -237,6 +239,17 @@ class RunnerTest extends MongoDbContainer {
 
         // active documents counted by category: A has 2, B has 1
         assertThat(rows(execution, "simple_aggregate"), is(List.of(Map.of("_id", "A", "count", 2), Map.of("_id", "B", "count", 1))));
+    }
+
+    /**
+     * Map-form nulls are dropped by core before the plugin runs; the JSON string form keeps them end to end.
+     */
+    @Test
+    @ExecuteFlow("flows/sanity-checks/null-filter-string.yml")
+    void nullFilterStringForm(Execution execution) {
+        assertThat(execution.getTaskRunList(), hasSize(3));
+        assertThat(execution.getState().getCurrent(), is(State.Type.SUCCESS));
+        assertThat(execution.findTaskRunsByTaskId("delete_null").getFirst().getOutputs().get("deletedCount"), is(1));
     }
 
     /**

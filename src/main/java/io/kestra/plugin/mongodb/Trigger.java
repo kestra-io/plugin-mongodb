@@ -3,6 +3,7 @@ package io.kestra.plugin.mongodb;
 import java.time.Duration;
 import java.util.Optional;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.bson.BsonDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -135,23 +136,35 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
     @Schema(
         title = "Query filter",
-        description = "BSON string or map rendered before execution."
+        description = """
+            BSON string or map rendered before execution.
+            A null map entry is dropped when the flow is parsed; pass a JSON string when a null is needed, for example `'{"deletedAt": null}'`.
+            """
     )
     @PluginProperty(group = "processing")
+    @JsonInclude(value = JsonInclude.Include.NON_NULL, content = JsonInclude.Include.ALWAYS)
     private Object filter;
 
     @Schema(
         title = "Projection",
-        description = "BSON string or map selecting fields to return."
+        description = """
+            BSON string or map selecting fields to return.
+            A null map entry is dropped when the flow is parsed; pass a JSON string when a null is needed.
+            """
     )
     @PluginProperty(group = "advanced")
+    @JsonInclude(value = JsonInclude.Include.NON_NULL, content = JsonInclude.Include.ALWAYS)
     private Object projection;
 
     @Schema(
         title = "Sort",
-        description = "BSON string or map defining sort order."
+        description = """
+            BSON string or map defining sort order.
+            A null map entry is dropped when the flow is parsed; pass a JSON string when a null is needed.
+            """
     )
     @PluginProperty(group = "advanced")
+    @JsonInclude(value = JsonInclude.Include.NON_NULL, content = JsonInclude.Include.ALWAYS)
     private Object sort;
 
     @Schema(

@@ -31,7 +31,8 @@ public class MongoDbContainer implements TestPropertyProvider {
     protected static String connectionUri;
 
     static {
-        mongoDBContainer = new MongoDBContainer(DockerImageName.parse("mongo:8.0"));
+        // mongo:8.0 refuses to start on Linux 6.19+ (SERVER-121912), which GitHub ubuntu-24.04 runners now use
+        mongoDBContainer = new MongoDBContainer(DockerImageName.parse("mongo:9.0"));
 
         mongoDBContainer.start();
         connectionUri = mongoDBContainer.getConnectionString();

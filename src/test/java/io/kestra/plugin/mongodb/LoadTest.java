@@ -7,6 +7,7 @@ import java.io.OutputStream;
 import java.math.BigInteger;
 import java.net.URI;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -37,6 +38,7 @@ import io.kestra.core.utils.IdUtils;
 import jakarta.inject.Inject;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.startsWith;
@@ -224,6 +226,37 @@ class LoadTest extends MongoDbContainer {
             assertThat(second.getDateTime("createdAt").getValue(), is(1704096000000L));
             assertThat(second.get("amount").getBsonType(), is(BsonType.DECIMAL128));
             assertThat(second.getDecimal128("amount").getValue().bigDecimalValue().toBigIntegerExact(), is(expectedAmount));
+        }
+    }
+
+    @Test
+    void runWithNestedIdWrittenLast() throws Exception {
+        var database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        // a nested _id as the last field name used to fail the whole chunk, the valid first record included
+        var uri = put(
+            List.of(
+                ImmutableMap.of("k", "first"),
+                ImmutableMap.of("k", "last", "customer", ImmutableMap.of("name", "ann", "_id", "c-42")),
+                ImmutableMap.of("k", "array", "items", List.of(ImmutableMap.of("q", "a", "_id", "i-7")))
+            )
+        );
+
+        var output = load(database, "nested_id", uri).build().run(runContextFactory.of());
+
+        assertThat(output.getInsertedCount(), is(3));
+        try (var client = getMongoClient()) {
+            var stored = client.getDatabase(database).getCollection("nested_id").find().into(new ArrayList<>());
+            for (var document : stored) {
+                assertThat(document.remove("_id"), instanceOf(ObjectId.class));
+            }
+            assertThat(
+                stored,
+                containsInAnyOrder(
+                    new Document("k", "first"),
+                    new Document("k", "last").append("customer", new Document("name", "ann").append("_id", "c-42")),
+                    new Document("k", "array").append("items", List.of(new Document("q", "a").append("_id", "i-7")))
+                )
+            );
         }
     }
 

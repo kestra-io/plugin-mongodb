@@ -140,7 +140,7 @@ public class Load extends AbstractLoad {
                 }
 
                 // ordinary maps and values go straight into a Document, only Extended JSON wrappers were decoded above
-                return new InsertOneModel<>(new Document(values));
+                return new InsertOneModel<>(new Document(MongoDbService.withId(values)));
             }));
     }
 

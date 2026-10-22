@@ -41,7 +41,7 @@ class DeleteTest extends MongoDbContainer {
     }
 
     @Test
-    void deleteManyWithEmptyMapFilterDeletesEverything() throws Exception {
+    void deleteManyWithEmptyMapFilterFails() throws Exception {
         var database = seed();
 
         var delete = delete(database)
@@ -49,8 +49,9 @@ class DeleteTest extends MongoDbContainer {
             .filter(Map.of())
             .build();
 
-        assertThat(delete.run(runContextFactory.of(Map.of())).getDeletedCount(), is(3L));
-        assertThat(count(database), is(0L));
+        var error = assertThrows(IllegalArgumentException.class, () -> delete.run(runContextFactory.of(Map.of())));
+        assertThat(error.getMessage(), containsString("`filter` must not be an empty map with DELETE_MANY"));
+        assertThat(count(database), is(3L));
     }
 
     @Test
