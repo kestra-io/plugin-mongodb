@@ -45,6 +45,8 @@ class LoadExtendedJsonTest {
     private static final BigInteger INTEGER_REQUIRING_ROUNDING = new BigInteger("12345678901234567890123456789012345");
     private static final BigInteger MAX_ADJUSTED_EXPONENT_INTEGER = BigInteger.TEN.pow(6144);
     private static final BigInteger INTEGER_OUTSIDE_DECIMAL128_RANGE = BigInteger.TEN.pow(6145);
+    private static final BigInteger MAX_FINITE_DECIMAL128_INTEGER =
+        BigInteger.TEN.pow(34).subtract(BigInteger.ONE).multiply(BigInteger.TEN.pow(6111));
     private static final BigInteger NESTED_BIG_INTEGER = new BigInteger("98765432101234567890");
 
     @Inject
@@ -266,11 +268,36 @@ class LoadExtendedJsonTest {
     }
 
     @Test
+    void shouldEncodeMaximumFiniteDecimal128IntegerInBothSigns() throws Exception {
+        var encoded = encode(
+            Map.of(
+                "positive", MAX_FINITE_DECIMAL128_INTEGER,
+                "negative", MAX_FINITE_DECIMAL128_INTEGER.negate()
+            )
+        );
+
+        assertDecimal128(encoded.get("positive"), MAX_FINITE_DECIMAL128_INTEGER);
+        assertDecimal128(encoded.get("negative"), MAX_FINITE_DECIMAL128_INTEGER.negate());
+    }
+
+    @Test
     void shouldRejectBigIntegerRequiringPrecisionLossWithRecordAndField() {
         var e = assertThrows(IllegalArgumentException.class, () -> encode(Map.of("amount", INTEGER_REQUIRING_ROUNDING)));
 
         assertThat(e.getMessage(), containsString("Record 1, field 'amount'"));
         assertThat(e.getMessage(), containsString("Decimal128"));
+    }
+
+    @Test
+    void shouldRejectIntegerBeyondMaximumFiniteDecimal128InBothSigns() {
+        BigInteger justBeyondMaximum = MAX_FINITE_DECIMAL128_INTEGER.add(BigInteger.ONE);
+
+        for (var value : List.of(justBeyondMaximum, justBeyondMaximum.negate())) {
+            var e = assertThrows(IllegalArgumentException.class, () -> encode(Map.of("amount", value)));
+
+            assertThat(e.getMessage(), containsString("Record 1, field 'amount'"));
+            assertThat(e.getMessage(), containsString("Decimal128"));
+        }
     }
 
     @Test

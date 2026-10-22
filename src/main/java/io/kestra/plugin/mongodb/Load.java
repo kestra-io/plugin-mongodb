@@ -87,9 +87,9 @@ import static io.kestra.core.utils.Rethrow.throwFunction;
     }
 )
 public class Load extends AbstractLoad {
-    private static final int DECIMAL128_MAX_COEFFICIENT_DIGITS = 34;
-    private static final int DECIMAL128_MAX_ENCODED_EXPONENT = 6111;
-    private static final int DECIMAL128_MAX_ADJUSTED_EXPONENT = 6144;
+    // Decimal128's largest finite integer is its maximum 34-digit coefficient scaled by exponent 6111.
+    private static final BigInteger DECIMAL128_MAX_INTEGER =
+        BigInteger.TEN.pow(34).subtract(BigInteger.ONE).multiply(BigInteger.TEN.pow(6111));
 
     @Schema(
         title = "Field used as _id",
@@ -187,31 +187,12 @@ public class Load extends AbstractLoad {
     }
 
     private static Decimal128 decodeBigInteger(BigInteger value, long record, String path) {
-        String digits = value.abs().toString();
-        if (digits.length() - 1 > DECIMAL128_MAX_ADJUSTED_EXPONENT) {
-            throw bigIntegerConversionError(record, path, "value exceeds Decimal128's maximum adjusted exponent of 6144");
+        if (value.abs().compareTo(DECIMAL128_MAX_INTEGER) > 0) {
+            throw bigIntegerConversionError(record, path, "value exceeds Decimal128's maximum finite integer magnitude");
         }
 
-        int trailingZeroCount = 0;
-        for (int i = digits.length() - 1; i > 0 && digits.charAt(i) == '0'; i--) {
-            trailingZeroCount++;
-        }
-
-        // Use removable decimal zeros to reduce the coefficient, stopping at the driver's maximum encoded exponent.
-        int exponent = Math.min(trailingZeroCount, DECIMAL128_MAX_ENCODED_EXPONENT);
-        int coefficientDigits = digits.length() - exponent;
-        if (coefficientDigits > DECIMAL128_MAX_COEFFICIENT_DIGITS) {
-            throw bigIntegerConversionError(record, path, "value requires more than 34 significant digits");
-        }
-
-        BigInteger coefficient = value.divide(BigInteger.TEN.pow(exponent));
-        BigDecimal rescaled = new BigDecimal(coefficient, -exponent);
         try {
-            Decimal128 decimal128 = new Decimal128(rescaled);
-            if (!decimal128.isFinite() || decimal128.bigDecimalValue().compareTo(new BigDecimal(value)) != 0) {
-                throw bigIntegerConversionError(record, path, "driver conversion did not preserve the original integer");
-            }
-            return decimal128;
+            return new Decimal128(new BigDecimal(value));
         } catch (NumberFormatException e) {
             throw bigIntegerConversionError(record, path, "MongoDB's Decimal128 driver rejected the exact representation", e);
         }
