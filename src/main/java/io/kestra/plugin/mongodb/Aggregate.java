@@ -192,7 +192,7 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
             List<Bson> pipelineStages = new ArrayList<>();
             if (this.pipeline != null) {
                 for (var stage : this.renderedStages(runContext)) {
-                    BsonDocument bsonStage = MongoDbService.toDocument(runContext, stage);
+                    BsonDocument bsonStage = MongoDbService.toDocument(stage);
                     pipelineStages.add(bsonStage);
                     logger.debug("Pipeline stage: {}", bsonStage);
                 }

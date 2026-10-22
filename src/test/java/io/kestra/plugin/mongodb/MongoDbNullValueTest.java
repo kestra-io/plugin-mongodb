@@ -167,9 +167,20 @@ class MongoDbNullValueTest {
             """;
         var task = JacksonMapper.ofYaml().readValue(yaml, Aggregate.class);
         var stages = task.renderedStages(this.runContext());
-        var document = MongoDbService.toDocument(this.runContext(), stages.getFirst());
+        var document = MongoDbService.toDocument(stages.getFirst());
 
         assertThat(document.getDocument("$match").get("k").isNull(), is(true));
+    }
+
+    @Test
+    void aggregateDoesNotEvaluateExpressionsFoundInData() throws Exception {
+        var task = Aggregate.builder()
+            .pipeline(Property.ofValue(List.of(Map.of("$match", Map.of("label", "{{ payload }}")))))
+            .build();
+        var runContext = this.runContextFactory.of(Map.of("payload", "{{ 6 * 7 }}"));
+        var document = MongoDbService.toDocument(task.renderedStages(runContext).getFirst());
+
+        assertThat(document.getDocument("$match").getString("label").getValue(), is("{{ 6 * 7 }}"));
     }
 
     @SuppressWarnings("unchecked")
