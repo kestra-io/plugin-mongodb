@@ -4,6 +4,10 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -39,7 +43,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 @NoArgsConstructor
 @Schema(
     title = "Run MongoDB bulkWrite from NDJSON",
-    description = "Reads newline-delimited bulk operations from internal storage and executes MongoDB bulkWrite. Supports insertOne, updateOne, updateMany, replaceOne, deleteOne and deleteMany in the db.collection.bulkWrite() format (https://www.mongodb.com/docs/manual/reference/method/db.collection.bulkWrite/). insertOne also accepts the legacy flat form where the body is the document itself; a body whose only field is an object named `document` is read as the bulkWrite form. Inherits chunking from AbstractLoad (default 1000 per bulk request). When an operation fails, the task fails with its number (its line in the file), and its outputs count the operations applied before it, which are kept. A retry runs every line again, so it is only safe for operations that change nothing more when repeated, such as `replaceOne`, or `updateOne` with `$set`, using `upsert: true`: an `insertOne` is inserted again, or fails with a duplicate key error if it sets `_id`, `$inc` or `$push` updates are applied twice, and a `deleteOne` whose filter matches several documents deletes another one."
+    description = "Reads newline-delimited bulk operations from internal storage and executes MongoDB bulkWrite. Supports insertOne, updateOne, updateMany, replaceOne, deleteOne and deleteMany in the db.collection.bulkWrite() format (https://www.mongodb.com/docs/manual/reference/method/db.collection.bulkWrite/). insertOne also accepts the legacy flat form where the body is the document itself; a body whose only field is an object named `document` is read as the bulkWrite form. Inherits chunking from AbstractLoad (default 1000 per bulk request). The file must be UTF-8: a line that isn't valid UTF-8 fails the task with its line number. When an operation fails, the task fails with its number (its line in the file), and its outputs count the operations applied before it, which are kept. A retry runs every line again, so it is only safe for operations that change nothing more when repeated, such as `replaceOne`, or `updateOne` with `$set`, using `upsert: true`: an `insertOne` is inserted again, or fails with a duplicate key error if it sets `_id`, `$inc` or `$push` updates are applied twice, and a `deleteOne` whose filter matches several documents deletes another one."
 )
 @Plugin(
     examples = {
@@ -86,7 +90,32 @@ public class Bulk extends AbstractLoad {
     @Override
     protected Flux<WriteModel<Bson>> source(RunContext runContext, InputStream inputStream) throws IOException {
         return Flux
-            .create(this.ndJSonReader(new BufferedReader(new InputStreamReader(inputStream))), FluxSink.OverflowStrategy.BUFFER);
+            .create(this.ndJSonReader(utf8Lines(inputStream)), FluxSink.OverflowStrategy.BUFFER);
+    }
+
+    // each line is read as raw bytes (ISO-8859-1 maps every byte to one char) and then decoded as UTF-8 on its own, so invalid
+    // UTF-8 fails with its line number instead of becoming U+FFFD; a UTF-8 character never contains the bytes of \n or \r
+    private static BufferedReader utf8Lines(InputStream inputStream) {
+        CharsetDecoder utf8 = StandardCharsets.UTF_8.newDecoder();
+
+        return new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.ISO_8859_1)) {
+            private long line;
+
+            @Override
+            public String readLine() throws IOException {
+                String bytes = super.readLine();
+                if (bytes == null) {
+                    return null;
+                }
+
+                line++;
+                try {
+                    return utf8.decode(ByteBuffer.wrap(bytes.getBytes(StandardCharsets.ISO_8859_1))).toString();
+                } catch (CharacterCodingException e) {
+                    throw new IllegalArgumentException("Line " + line + " is not valid UTF-8", e);
+                }
+            }
+        };
     }
 
     public Consumer<FluxSink<WriteModel<Bson>>> ndJSonReader(BufferedReader input) throws IOException {
