@@ -278,7 +278,7 @@ class LoadExtendedJsonTest {
 
     @Test
     void shouldRejectIntegerBeyondMaximumFiniteDecimal128InBothSigns() {
-        BigInteger justBeyondMaximum = MAX_FINITE_DECIMAL128_INTEGER.add(BigInteger.ONE);
+        var justBeyondMaximum = MAX_FINITE_DECIMAL128_INTEGER.add(BigInteger.ONE);
 
         for (var value : List.of(justBeyondMaximum, justBeyondMaximum.negate())) {
             var e = assertThrows(IllegalArgumentException.class, () -> encode(Map.of("amount", value)));

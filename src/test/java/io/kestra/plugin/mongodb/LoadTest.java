@@ -192,9 +192,9 @@ class LoadTest extends MongoDbContainer {
 
     @Test
     void runWithOffsetDateTimeAndBigIntegerInSecondRecord() throws Exception {
-        String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
-        BigInteger expectedAmount = new BigInteger("1234567890123456789012345678901234");
-        URI uri = put(
+        var database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        var expectedAmount = new BigInteger("1234567890123456789012345678901234");
+        var uri = put(
             List.of(
                 Map.of("k", "first"),
                 Map.of(
@@ -204,21 +204,21 @@ class LoadTest extends MongoDbContainer {
                 )
             )
         );
-        Load load = load(database, "load_offset_datetime", uri).chunk(Property.ofValue(2)).build();
-        RunContext runContext = runContextFactory.of();
+        var load = load(database, "load_offset_datetime", uri).chunk(Property.ofValue(2)).build();
+        var runContext = runContextFactory.of();
 
-        Load.Output runOutput = load.run(runContext);
+        var runOutput = load.run(runContext);
 
         assertThat(runOutput.getSize(), is(2L));
         assertThat(runOutput.getInsertedCount(), is(2));
         assertThat(metric(runContext, "requests.count"), is(1D));
 
-        try (MongoClient client = getMongoClient()) {
+        try (var client = getMongoClient()) {
             var collection = client.getDatabase(database).getCollection("load_offset_datetime", BsonDocument.class);
             assertThat(collection.countDocuments(), is(2L));
 
-            BsonDocument first = collection.find(Filters.eq("k", "first")).first();
-            BsonDocument second = collection.find(Filters.eq("k", "offset")).first();
+            var first = collection.find(Filters.eq("k", "first")).first();
+            var second = collection.find(Filters.eq("k", "offset")).first();
 
             assertThat(first, is(org.hamcrest.Matchers.notNullValue()));
             assertThat(second, is(org.hamcrest.Matchers.notNullValue()));
