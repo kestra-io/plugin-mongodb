@@ -187,7 +187,7 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
     public Aggregate.Output run(RunContext runContext) throws Exception {
         Logger logger = runContext.logger();
 
-        try (MongoClient client = this.connection.client(runContext)) {
+        try (MongoClient client = this.client(runContext)) {
             MongoCollection<BsonDocument> collection = this.collection(runContext, client, BsonDocument.class);
 
             List<Bson> pipelineStages = new ArrayList<>();

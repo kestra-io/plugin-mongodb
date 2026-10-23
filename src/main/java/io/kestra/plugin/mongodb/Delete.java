@@ -102,7 +102,7 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
             throw new IllegalArgumentException("`filter` must not be an empty map with DELETE_MANY: it deletes every document and can come from a dropped null. Set `filter: '{}'` to delete every document in the collection.");
         }
 
-        try (MongoClient client = this.connection.client(runContext)) {
+        try (MongoClient client = this.client(runContext)) {
             MongoCollection<Bson> collection = this.collection(runContext, client);
 
             DeleteResult deleteResult;
