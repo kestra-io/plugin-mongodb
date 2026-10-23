@@ -85,6 +85,45 @@ class AggregateTest extends MongoDbContainer {
         }
     }
 
+    @Test
+    void doesNotEvaluateExpressionsFoundInData() throws Exception {
+        insertLiteralLabel();
+        var runContext = runContextFactory.of(Map.of("payload", "{{ 6 * 7 }}"));
+
+        var output = literalLabelAggregate(
+            Property.ofValue(List.of(Map.of("$match", Map.of("label", "{{ payload }}"))))
+        ).run(runContext);
+
+        assertThat(output.getSize(), is(1L));
+    }
+
+    @Test
+    void doesNotEvaluateExpressionsFoundInDataWithExpressionPipeline() throws Exception {
+        insertLiteralLabel();
+        var runContext = runContextFactory.of(Map.of("stages", "[{\"$match\": {\"label\": \"{{ 6 * 7 }}\"}}]"));
+
+        var output = literalLabelAggregate(Property.ofExpression("{{ stages }}")).run(runContext);
+
+        assertThat(output.getSize(), is(1L));
+    }
+
+    private void insertLiteralLabel() {
+        try (MongoClient client = MongoClients.create(connectionUri)) {
+            var collection = client.getDatabase(DATABASE_NAME).getCollection("literal_label");
+            collection.drop();
+            collection.insertOne(new Document("_id", 1).append("label", "{{ 6 * 7 }}"));
+        }
+    }
+
+    private Aggregate literalLabelAggregate(Property<List<Map<String, Object>>> pipeline) {
+        return Aggregate.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
+            .database(Property.ofValue(DATABASE_NAME))
+            .collection(Property.ofValue("literal_label"))
+            .pipeline(pipeline)
+            .build();
+    }
+
     @SuppressWarnings("unchecked")
     @Test
     void testSimpleAggregation() throws Exception {

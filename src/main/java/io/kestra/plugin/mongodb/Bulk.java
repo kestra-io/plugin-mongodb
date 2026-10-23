@@ -5,8 +5,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 
 import org.bson.BsonDocument;
@@ -39,7 +39,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 @NoArgsConstructor
 @Schema(
     title = "Run MongoDB bulkWrite from NDJSON",
-    description = "Reads newline-delimited bulk operations from internal storage and executes MongoDB bulkWrite. Supports insertOne, updateOne, updateMany, replaceOne, deleteOne and deleteMany in the db.collection.bulkWrite() format (https://www.mongodb.com/docs/manual/reference/method/db.collection.bulkWrite/). insertOne also accepts the legacy flat form where the body is the document itself; a body whose only field is an object named `document` is read as the bulkWrite form. Inherits chunking from AbstractLoad (default 1000 per bulk request). When an operation fails, the task fails with its number (its line in the file), and its outputs count the operations applied before it, which are kept. A retry runs every line again, so it is only safe for operations that change nothing more when repeated, such as `replaceOne`, or `updateOne` with `$set`, using `upsert: true`: an `insertOne` is inserted again, or fails with a duplicate key error if it sets `_id`, `$inc` or `$push` updates are applied twice, and a `deleteOne` whose filter matches several documents deletes another one."
+    description = "Reads newline-delimited bulk operations from internal storage and executes MongoDB bulkWrite. Supports insertOne, updateOne, updateMany, replaceOne, deleteOne and deleteMany in the db.collection.bulkWrite() format (https://www.mongodb.com/docs/manual/reference/method/db.collection.bulkWrite/). insertOne also accepts the legacy flat form where the body is the document itself; a body whose only field is an object named `document` is read as the bulkWrite form. Blank and whitespace-only lines are skipped. Delete, update and replace operations support `collation` and `hint`. Inherits chunking from AbstractLoad (default 1000 per bulk request). When an operation fails, the task fails with its record number (counting emitted operations, not file lines), and its outputs count the operations applied before it, which are kept. A retry runs every line again, so it is only safe for operations that change nothing more when repeated, such as `replaceOne`, or `updateOne` with `$set`, using `upsert: true`: an `insertOne` is inserted again, or fails with a duplicate key error if it sets `_id`, `$inc` or `$push` updates are applied twice, and a `deleteOne` whose filter matches several documents deletes another one."
 )
 @Plugin(
     examples = {
@@ -83,6 +83,10 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
     }
 )
 public class Bulk extends AbstractLoad {
+    private static final Set<String> DELETE_KEYS = Set.of("filter", "collation", "hint");
+    private static final Set<String> REPLACE_KEYS = Set.of("filter", "replacement", "upsert", "bypassDocumentValidation", "collation", "hint");
+    private static final Set<String> UPDATE_KEYS = Set.of("filter", "update", "upsert", "collation", "hint", "arrayFilters");
+
     @Override
     protected Flux<WriteModel<Bson>> source(RunContext runContext, InputStream inputStream) throws IOException {
         return Flux
@@ -93,46 +97,104 @@ public class Bulk extends AbstractLoad {
         return throwConsumer(s ->
         {
             String row;
+            var lineNumber = 0L;
 
             // stop reading once downstream cancelled, after a failed bulkWrite or a killed task
             while (!s.isCancelled() && (row = input.readLine()) != null) {
-                BsonDocument bsonDocument = BsonDocument.parse(row);
-                Map.Entry<String, BsonValue> operation = bsonDocument.entrySet().iterator().next();
+                lineNumber++;
 
-                WriteModel<Bson> docWriteRequest = switch (operation.getKey()) {
-                    case "insertOne" -> new InsertOneModel<>(
-                        MongoDbService.withId(getInsertOneDocument(operation.getValue().asDocument()))
-                    );
-                    case "replaceOne" -> new ReplaceOneModel<>(
-                        operation.getValue().asDocument().get("filter").asDocument(),
-                        operation.getValue().asDocument().get("replacement").asDocument(),
-                        getReplaceOptions(operation.getValue().asDocument())
-                    );
-                    case "updateOne" -> new UpdateOneModel<>(
-                        operation.getValue().asDocument().get("filter").asDocument(),
-                        operation.getValue().asDocument().get("update").asDocument(),
-                        getUpdateOptions(operation.getValue().asDocument())
-                    );
-                    case "updateMany" -> new UpdateManyModel<>(
-                        operation.getValue().asDocument().get("filter").asDocument(),
-                        operation.getValue().asDocument().get("update").asDocument(),
-                        getUpdateOptions(operation.getValue().asDocument())
-                    );
-                    case "deleteOne" -> new DeleteOneModel<>(
-                        operation.getValue().asDocument().get("filter").asDocument()
-                    );
-                    case "deleteMany" -> new DeleteManyModel<>(
-                        operation.getValue().asDocument().get("filter").asDocument()
-                    );
-                    default ->
-                        throw new IllegalArgumentException("Invalid bulk request type on '" + row + "'");
-                };
+                if (row.isBlank()) {
+                    continue;
+                }
 
-                s.next(docWriteRequest);
+                try {
+                    var bsonDocument = BsonDocument.parse(row);
+
+                    if (bsonDocument.size() != 1) {
+                        throw new IllegalArgumentException(
+                            "expected exactly 1 operation key, found "
+                                + bsonDocument.size() + " on '" + row + "'"
+                        );
+                    }
+
+                    var operation = bsonDocument.entrySet().iterator().next();
+                    if (!operation.getValue().isDocument()) {
+                        throw new IllegalArgumentException(operation.getKey() + " requires a document body");
+                    }
+                    var body = operation.getValue().asDocument();
+
+                    WriteModel<Bson> docWriteRequest = switch (operation.getKey()) {
+                        case "insertOne" -> new InsertOneModel<>(
+                            MongoDbService.withId(getInsertOneDocument(body))
+                        );
+                        case "replaceOne" -> {
+                            validateKeys("replaceOne", body, REPLACE_KEYS);
+                            yield new ReplaceOneModel<>(
+                                requireDocument("replaceOne", body, "filter"),
+                                requireDocument("replaceOne", body, "replacement"),
+                                getReplaceOptions(body)
+                            );
+                        }
+                        case "updateOne" -> {
+                            validateKeys("updateOne", body, UPDATE_KEYS);
+                            yield new UpdateOneModel<>(
+                                requireDocument("updateOne", body, "filter"),
+                                requireDocument("updateOne", body, "update"),
+                                getUpdateOptions(body)
+                            );
+                        }
+                        case "updateMany" -> {
+                            validateKeys("updateMany", body, UPDATE_KEYS);
+                            yield new UpdateManyModel<>(
+                                requireDocument("updateMany", body, "filter"),
+                                requireDocument("updateMany", body, "update"),
+                                getUpdateOptions(body)
+                            );
+                        }
+                        case "deleteOne" -> {
+                            validateKeys("deleteOne", body, DELETE_KEYS);
+                            yield new DeleteOneModel<>(
+                                requireDocument("deleteOne", body, "filter"),
+                                getDeleteOptions(body)
+                            );
+                        }
+                        case "deleteMany" -> {
+                            validateKeys("deleteMany", body, DELETE_KEYS);
+                            yield new DeleteManyModel<>(
+                                requireDocument("deleteMany", body, "filter"),
+                                getDeleteOptions(body)
+                            );
+                        }
+                        default ->
+                            throw new IllegalArgumentException("Invalid bulk request type on '" + row + "'");
+                    };
+
+                    s.next(docWriteRequest);
+                } catch (RuntimeException e) {
+                    throw new IllegalArgumentException(
+                        "Invalid bulk request on line " + lineNumber + ": " + e.getMessage(), e
+                    );
+                }
             }
 
             s.complete();
         });
+    }
+
+    private static void validateKeys(String op, BsonDocument body, Set<String> allowed) {
+        for (var key : body.keySet()) {
+            if (!allowed.contains(key)) {
+                throw new IllegalArgumentException(op + " does not support key '" + key + "'");
+            }
+        }
+    }
+
+    private static BsonDocument requireDocument(String op, BsonDocument body, String field) {
+        if (!body.containsKey(field) || !body.get(field).isDocument()) {
+            String article = field.equals("update") ? "an" : "a";
+            throw new IllegalArgumentException(op + " requires " + article + " '" + field + "' document");
+        }
+        return body.getDocument(field);
     }
 
     // unwrap the bulkWrite { document: ... } envelope; any other body stays as-is for the legacy flat syntax
@@ -145,7 +207,7 @@ public class Bulk extends AbstractLoad {
     }
 
     private ReplaceOptions getReplaceOptions(BsonDocument document) {
-        ReplaceOptions options = new ReplaceOptions();
+        var options = new ReplaceOptions();
 
         if (document.containsKey("upsert") && document.get("upsert").isBoolean()) {
             options.upsert(document.get("upsert").asBoolean().getValue());
@@ -158,12 +220,14 @@ public class Bulk extends AbstractLoad {
         if (document.containsKey("collation") && document.get("collation").isDocument()) {
             options.collation(getCollation(document.get("collation").asDocument()));
         }
+
+        applyHint(document, options::hintString, options::hint);
 
         return options;
     }
 
     private UpdateOptions getUpdateOptions(BsonDocument document) {
-        UpdateOptions options = new UpdateOptions();
+        var options = new UpdateOptions();
 
         if (document.containsKey("upsert") && document.get("upsert").isBoolean()) {
             options.upsert(document.get("upsert").asBoolean().getValue());
@@ -177,10 +241,12 @@ public class Bulk extends AbstractLoad {
             options.collation(getCollation(document.get("collation").asDocument()));
         }
 
-        if (document.containsKey("arrayFilters") && document.get("arrayFilters").isArray()) {
-            List<Bson> arrayFilters = new ArrayList<>();
+        applyHint(document, options::hintString, options::hint);
 
-            for (BsonValue filter : document.get("arrayFilters").asArray()) {
+        if (document.containsKey("arrayFilters") && document.get("arrayFilters").isArray()) {
+            var arrayFilters = new ArrayList<Bson>();
+
+            for (var filter : document.get("arrayFilters").asArray()) {
                 arrayFilters.add(filter.asDocument());
             }
 
@@ -188,6 +254,31 @@ public class Bulk extends AbstractLoad {
         }
 
         return options;
+    }
+
+    private DeleteOptions getDeleteOptions(BsonDocument document) {
+        var options = new DeleteOptions();
+
+        if (document.containsKey("collation") && document.get("collation").isDocument()) {
+            options.collation(getCollation(document.get("collation").asDocument()));
+        }
+
+        applyHint(document, options::hintString, options::hint);
+
+        return options;
+    }
+
+    private static void applyHint(BsonDocument document, Consumer<String> hintString, Consumer<Bson> hint) {
+        if (document.containsKey("hint")) {
+            var value = document.get("hint");
+            if (value.isString()) {
+                hintString.accept(value.asString().getValue());
+            } else if (value.isDocument()) {
+                hint.accept(value.asDocument());
+            } else {
+                throw new IllegalArgumentException("hint must be an index name or a key pattern document");
+            }
+        }
     }
 
     private Collation getCollation(BsonDocument document) {

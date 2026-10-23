@@ -37,6 +37,7 @@ import jakarta.inject.Inject;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.startsWith;
@@ -129,6 +130,56 @@ class LoadTest extends MongoDbContainer {
             assertThat(stored.get("_id"), is(expectedId));
             assertThat(stored.containsKey("id"), is(false));
             assertThat(stored.getString("name"), is("john"));
+        }
+    }
+
+    @Test
+    void runWithIdKeyId() throws Exception {
+        assertIdKeyIdKeepsTheRecordIds(true);
+    }
+
+    @Test
+    void runWithIdKeyIdNotRemoved() throws Exception {
+        assertIdKeyIdKeepsTheRecordIds(false);
+    }
+
+    private void assertIdKeyIdKeepsTheRecordIds(boolean removeIdKey) throws Exception {
+        RunContext runContext = runContextFactory.of();
+        String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+
+        File tempFile = File.createTempFile(this.getClass().getSimpleName().toLowerCase() + "_idkey_id_", ".trs");
+        OutputStream output = new FileOutputStream(tempFile);
+
+        // a 24-character hex string, as Find with store: true writes an ObjectId, and an $oid wrapper
+        ObjectId hexId = new ObjectId();
+        ObjectId wrappedId = new ObjectId();
+        FileSerde.write(output, ImmutableMap.of("_id", hexId.toString(), "name", "john"));
+        FileSerde.write(output, ImmutableMap.of("_id", ImmutableMap.of("$oid", wrappedId.toString()), "name", "jane"));
+        URI uri = storageInterface.put(TenantService.MAIN_TENANT, null, URI.create("/" + IdUtils.create() + ".ion"), new FileInputStream(tempFile));
+
+        Load put = Load.builder()
+            .connection(
+                MongoDbConnection.builder()
+                    .uri(Property.ofValue(connectionUri))
+                    .build()
+            )
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("load_idkey_id"))
+            .from(Property.ofValue(uri.toString()))
+            .idKey(Property.ofValue("_id"))
+            .removeIdKey(Property.ofValue(removeIdKey))
+            .build();
+
+        assertThat(put.run(runContext).getInsertedCount(), is(2));
+
+        try (MongoClient client = getMongoClient()) {
+            var collection = client.getDatabase(database).getCollection("load_idkey_id", Document.class);
+            assertThat(collection.find().map(document -> document.get("_id")).into(new ArrayList<>()), containsInAnyOrder(hexId, wrappedId));
+
+            // the records keep their ids, so loading the file again is rejected instead of inserting them twice
+            var e = assertThrows(Exception.class, () -> put.run(runContextFactory.of()));
+            assertThat(e.getMessage(), containsString("E11000"));
+            assertThat(collection.countDocuments(), is(2L));
         }
     }
 
