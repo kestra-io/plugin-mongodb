@@ -108,6 +108,9 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
 
             logger.info("Insert doc: {}", bsonDocument);
 
+            // an unacknowledged write (w=0) carries no inserted id: getInsertedId() throws on it
+            boolean acknowledged = insertOneResult.wasAcknowledged();
+
             runContext.metric(
                 Counter.of(
                     "inserted.count", 1,
@@ -117,8 +120,8 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
             );
 
             return Output.builder()
-                .insertedId(MongoDbService.toIdString(Objects.requireNonNull(insertOneResult.getInsertedId())))
-                .wasAcknowledged(insertOneResult.wasAcknowledged())
+                .insertedId(acknowledged ? MongoDbService.toIdString(Objects.requireNonNull(insertOneResult.getInsertedId())) : null)
+                .wasAcknowledged(acknowledged)
                 .build();
         }
     }
@@ -134,7 +137,9 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
                 - String: as is
                 - Int32, Int64, Double or Decimal128: the number
                 - UUID (Binary subtype 4): its canonical string
-                - any other type, including a legacy UUID (Binary subtype 3) or a document: its relaxed MongoDB Extended JSON, such as `{"a": 1}`"""
+                - any other type, including a legacy UUID (Binary subtype 3) or a document: its relaxed MongoDB Extended JSON, such as `{"a": 1}`
+
+                Null for unacknowledged writes (`w=0`), which have no id to report."""
         )
         private String insertedId;
 

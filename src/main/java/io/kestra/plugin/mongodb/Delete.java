@@ -106,7 +106,7 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
             MongoCollection<Bson> collection = this.collection(runContext, client);
 
             DeleteResult deleteResult;
-            if (Operation.DELETE_ONE.equals(rOperation)) {
+            if (Operation.DELETE_ONE.equals(runContext.render(this.operation).as(Operation.class).orElseThrow())) {
                 deleteResult = collection.deleteOne(bsonFilter);
             } else {
                 deleteResult = collection.deleteMany(bsonFilter);
@@ -114,17 +114,23 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
 
             logger.debug("Delete doc with filter: {}", bsonFilter);
 
-            runContext.metric(
-                Counter.of(
-                    "deleted.count", deleteResult.getDeletedCount(),
-                    "database", collection.getNamespace().getDatabaseName(),
-                    "collection", collection.getNamespace().getCollectionName()
-                )
-            );
+            // an unacknowledged write (w=0) carries no counts: getDeletedCount() throws on it,
+            // including in the metric below
+            boolean acknowledged = deleteResult.wasAcknowledged();
+
+            if (acknowledged) {
+                runContext.metric(
+                    Counter.of(
+                        "deleted.count", deleteResult.getDeletedCount(),
+                        "database", collection.getNamespace().getDatabaseName(),
+                        "collection", collection.getNamespace().getCollectionName()
+                    )
+                );
+            }
 
             return Output.builder()
-                .wasAcknowledged(deleteResult.wasAcknowledged())
-                .deletedCount(deleteResult.getDeletedCount())
+                .wasAcknowledged(acknowledged)
+                .deletedCount(acknowledged ? deleteResult.getDeletedCount() : 0L)
                 .build();
         }
     }
@@ -143,7 +149,8 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
         private Boolean wasAcknowledged;
 
         @Schema(
-            title = "Documents deleted"
+            title = "Documents deleted",
+            description = "0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         private final long deletedCount;
     }
