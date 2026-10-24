@@ -4,7 +4,9 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
+import java.math.BigInteger;
 import java.net.URI;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -40,6 +42,7 @@ import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.startsWith;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -126,7 +129,7 @@ class LoadTest extends MongoDbContainer {
                 .find()
                 .first();
 
-            assertThat(stored, is(org.hamcrest.Matchers.notNullValue()));
+            assertThat(stored, is(notNullValue()));
             assertThat(stored.get("_id"), is(expectedId));
             assertThat(stored.containsKey("id"), is(false));
             assertThat(stored.getString("name"), is("john"));
@@ -228,7 +231,7 @@ class LoadTest extends MongoDbContainer {
                 .find()
                 .first();
 
-            assertThat(stored, is(org.hamcrest.Matchers.notNullValue()));
+            assertThat(stored, is(notNullValue()));
             assertThat(stored.getObjectId("_id").getValue(), is(expectedId));
             assertThat(stored.containsKey("id"), is(false));
             assertThat(stored.get("createdAt").getBsonType(), is(BsonType.DATE_TIME));
@@ -236,6 +239,45 @@ class LoadTest extends MongoDbContainer {
             assertThat(stored.get("externalId").getBsonType(), is(BsonType.OBJECT_ID));
             assertThat(stored.getDocument("nested").get("count").getBsonType(), is(BsonType.INT64));
             assertThat(stored.getDocument("nested").getArray("ids").get(0).getBsonType(), is(BsonType.OBJECT_ID));
+        }
+    }
+
+    @Test
+    void runWithOffsetDateTimeAndBigIntegerInSecondRecord() throws Exception {
+        var database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        var expectedAmount = new BigInteger("1234567890123456789012345678901234");
+        var uri = put(
+            List.of(
+                Map.of("k", "first"),
+                Map.of(
+                    "k", "offset",
+                    "createdAt", OffsetDateTime.parse("2024-01-01T10:00:00+02:00"),
+                    "amount", expectedAmount
+                )
+            )
+        );
+        var load = load(database, "load_offset_datetime", uri).chunk(Property.ofValue(2)).build();
+        var runContext = runContextFactory.of();
+
+        var runOutput = load.run(runContext);
+
+        assertThat(runOutput.getSize(), is(2L));
+        assertThat(runOutput.getInsertedCount(), is(2));
+        assertThat(metric(runContext, "requests.count"), is(1D));
+
+        try (var client = getMongoClient()) {
+            var collection = client.getDatabase(database).getCollection("load_offset_datetime", BsonDocument.class);
+            assertThat(collection.countDocuments(), is(2L));
+
+            var first = collection.find(Filters.eq("k", "first")).first();
+            var second = collection.find(Filters.eq("k", "offset")).first();
+
+            assertThat(first, is(notNullValue()));
+            assertThat(second, is(notNullValue()));
+            assertThat(second.get("createdAt").getBsonType(), is(BsonType.DATE_TIME));
+            assertThat(second.getDateTime("createdAt").getValue(), is(1704096000000L));
+            assertThat(second.get("amount").getBsonType(), is(BsonType.DECIMAL128));
+            assertThat(second.getDecimal128("amount").getValue().bigDecimalValue().toBigIntegerExact(), is(expectedAmount));
         }
     }
 
