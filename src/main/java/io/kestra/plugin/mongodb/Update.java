@@ -137,7 +137,7 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
             throw new IllegalArgumentException("`$set` must not be empty: it changes nothing and can come from a dropped null. Pass `document` as a JSON string when a null is needed, for example '{\"$set\": {\"k\": null}}'.");
         }
 
-        try (MongoClient client = this.connection.client(runContext)) {
+        try (MongoClient client = this.client(runContext)) {
             MongoCollection<Bson> collection = this.collection(runContext, client);
 
             UpdateResult updateResult;

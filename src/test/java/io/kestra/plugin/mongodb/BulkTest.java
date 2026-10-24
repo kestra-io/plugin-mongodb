@@ -33,6 +33,7 @@ import com.mongodb.client.model.DeleteManyModel;
 import com.mongodb.client.model.DeleteOneModel;
 import com.mongodb.client.model.ReplaceOneModel;
 import com.mongodb.client.model.UpdateOneModel;
+import com.mongodb.event.CommandListener;
 
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.junit.annotations.KestraTest;
@@ -379,8 +380,8 @@ class BulkTest extends MongoDbContainer {
     @SuperBuilder
     private static class SecondWriteFailsConnection extends MongoDbConnection {
         @Override
-        MongoClient client(RunContext runContext) throws IllegalVariableEvaluationException {
-            return failSecondWrite(super.client(runContext), MongoClient.class, new AtomicInteger());
+        MongoClient client(RunContext runContext, CommandListener listener) throws IllegalVariableEvaluationException {
+            return failSecondWrite(super.client(runContext, listener), MongoClient.class, new AtomicInteger());
         }
 
         // proxies the client, and the databases and collections it returns, down to bulkWrite
