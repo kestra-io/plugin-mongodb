@@ -109,7 +109,7 @@ public class Load extends AbstractLoad {
 
     @Schema(
         title = "Remove idKey field",
-        description = "When true (default), drops the source field after copying it to _id."
+        description = "When true (default), drops the source field after copying it to _id. Has no effect when `idKey` is `_id`."
     )
     @Builder.Default
     @PluginProperty(group = "connection")
@@ -143,7 +143,8 @@ public class Load extends AbstractLoad {
                         id instanceof BsonObjectId bsonObjectId ? bsonObjectId : new BsonObjectId(new ObjectId(id.toString()))
                     );
 
-                    if (runContext.render(this.removeIdKey).as(Boolean.class).orElseThrow()) {
+                    // with idKey _id, the source field is the _id just set, so it is kept
+                    if (!idKey.equals("_id") && runContext.render(this.removeIdKey).as(Boolean.class).orElseThrow()) {
                         values.remove(idKey);
                     }
                 }
