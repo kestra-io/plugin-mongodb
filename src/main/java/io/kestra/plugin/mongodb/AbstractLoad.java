@@ -66,7 +66,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
             MongoCollection<Bson> collection = this.collection(runContext, client);
 
             AtomicLong count = new AtomicLong();
-            Progress progress = new Progress();
+            var progress = new Progress(collection.getWriteConcern().isAcknowledged());
 
             var renderedChunk = runContext.render(this.chunk).as(Integer.class).orElse(null);
             Flux<BulkWriteResult> flowable = this.source(runContext, inputStream)
@@ -127,13 +127,16 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
     private static class Progress {
         private long requests;
         private long applied;
-        // the write concern comes from the connection, so every chunk in a run shares it
-        private boolean acknowledged = true;
+        private final boolean acknowledged;
         private int insertedCount;
         private int matchedCount;
         private int modifiedCount;
         private int deletedCount;
         private int upsertedCount;
+
+        Progress(boolean acknowledged) {
+            this.acknowledged = acknowledged;
+        }
 
         BulkWriteResult write(MongoCollection<Bson> collection, List<WriteModel<Bson>> chunk) {
             var records = range(this.applied + 1, this.applied + chunk.size());
@@ -174,10 +177,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
         }
 
         private void add(BulkWriteResult result) {
-            this.acknowledged &= result.wasAcknowledged();
-
-            // unacknowledged writes (w=0) carry no ids or counts: every getter on the
-            // result throws, so skip accumulation and let the remaining chunks flow through
+            // a w=0 result throws on every getter, so its counts are skipped and the next chunks still run
             if (!result.wasAcknowledged()) {
                 return;
             }
@@ -228,7 +228,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
 
         @Schema(
             title = "Whether the writes were acknowledged",
-            description = "False when the connection uses an unacknowledged write concern (`w=0`); ids and counts are then empty."
+            description = "False with an unacknowledged write concern (`w=0`): the counts are then 0."
         )
         private Boolean wasAcknowledged;
 

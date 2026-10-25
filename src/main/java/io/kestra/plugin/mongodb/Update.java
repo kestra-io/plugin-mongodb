@@ -151,9 +151,8 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
 
             logger.debug("Updating doc: {} with filter: {}", bsonDocument, bsonFilter);
 
-            // an unacknowledged write (w=0) carries no counts: every getter on it throws,
-            // including getModifiedCount() used for the metric below
-            boolean acknowledged = updateResult.wasAcknowledged();
+            // a w=0 result has no counts or upserted id, every getter on it throws
+            var acknowledged = updateResult.wasAcknowledged();
 
             if (acknowledged) {
                 runContext.metric(
@@ -168,7 +167,7 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
             return Output.builder()
                 .upsertedId(acknowledged && updateResult.getUpsertedId() != null ? MongoDbService.toIdString(updateResult.getUpsertedId()) : null)
                 .wasAcknowledged(acknowledged)
-                .matchedCount(acknowledged ? updateResult.getMatchedCount() : 0L)
+                .matchedCount(acknowledged ? updateResult.getMatchedCount() : null)
                 .modifiedCount(acknowledged ? updateResult.getModifiedCount() : null)
                 .build();
         }
@@ -205,9 +204,9 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
 
         @Schema(
             title = "The number of documents matched by the query",
-            description = "0 for unacknowledged writes (`w=0`), which have no counts to report."
+            description = "Null for unacknowledged writes (`w=0`), which have no counts to report."
         )
-        private final long matchedCount;
+        private final Long matchedCount;
 
         @Schema(
             title = "The number of documents modified by the update",

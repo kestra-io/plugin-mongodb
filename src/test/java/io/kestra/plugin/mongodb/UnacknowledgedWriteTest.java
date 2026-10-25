@@ -3,23 +3,24 @@ package io.kestra.plugin.mongodb;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.io.OutputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Locale;
+import java.util.function.BooleanSupplier;
 
 import org.bson.Document;
+import org.bson.conversions.Bson;
 import org.junit.jupiter.api.Test;
 
 import com.google.common.collect.ImmutableMap;
-import com.mongodb.client.MongoClient;
 import com.mongodb.client.model.Filters;
 
 import io.kestra.core.models.property.Property;
-import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.FileSerde;
 import io.kestra.core.storages.StorageInterface;
 import io.kestra.core.tenant.TenantService;
+import io.kestra.core.utils.Await;
 import io.kestra.core.utils.IdUtils;
 
 import jakarta.inject.Inject;
@@ -28,183 +29,145 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 
-/**
- * Covers unacknowledged writes ({@code w=0}): the driver throws on every id and
- * count getter of the write results, so the tasks must check {@code wasAcknowledged()}
- * first and succeed with empty ids/counts instead of failing.
- */
 class UnacknowledgedWriteTest extends MongoDbContainer {
 
     @Inject
     private StorageInterface storageInterface;
 
-    private static String unacknowledgedUri() {
-        return connectionUri.contains("?") ? connectionUri + "&w=0" : connectionUri + "?w=0";
-    }
-
-    private static MongoDbConnection unacknowledgedConnection() {
-        return MongoDbConnection.builder().uri(Property.ofValue(unacknowledgedUri())).build();
-    }
-
     @Test
     void insertOneUnacknowledged() throws Exception {
-        RunContext runContext = runContextFactory.of();
-        String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        var database = database();
 
-        InsertOne insert = InsertOne.builder()
+        var output = InsertOne.builder()
             .connection(unacknowledgedConnection())
             .database(Property.ofValue(database))
             .collection(Property.ofValue("unack_insert"))
             .document(ImmutableMap.of("name", "John Doe"))
-            .build();
-
-        InsertOne.Output output = insert.run(runContext);
+            .build()
+            .run(runContextFactory.of());
 
         assertThat(output.getWasAcknowledged(), is(false));
-        assertThat(output.getInsertedId(), nullValue());
-
-        // the write itself went through
-        try (MongoClient client = getMongoClient()) {
-            assertThat(
-                client.getDatabase(database).getCollection("unack_insert").countDocuments(Filters.eq("name", "John Doe")),
-                is(1L)
-            );
+        awaitCount(database, "unack_insert", Filters.eq("name", "John Doe"), 1);
+        try (var client = getMongoClient()) {
+            var stored = client.getDatabase(database).getCollection("unack_insert").find().first();
+            assertThat(output.getInsertedId(), is(stored.getObjectId("_id").toHexString()));
         }
     }
 
     @Test
     void updateUnacknowledged() throws Exception {
-        RunContext runContext = runContextFactory.of();
-        String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
-
-        try (MongoClient client = getMongoClient()) {
-            client.getDatabase(database).getCollection("unack_update")
-                .insertOne(new Document("name", "John Doe").append("visits", 1));
+        var database = database();
+        try (var client = getMongoClient()) {
+            client.getDatabase(database).getCollection("unack_update").insertOne(new Document("name", "John Doe").append("visits", 1));
         }
 
-        Update update = Update.builder()
+        var output = Update.builder()
             .connection(unacknowledgedConnection())
             .database(Property.ofValue(database))
             .collection(Property.ofValue("unack_update"))
             .document("{\"$inc\": {\"visits\": 1}}")
             .filter(ImmutableMap.of("name", "John Doe"))
-            .build();
-
-        Update.Output output = update.run(runContext);
+            .build()
+            .run(runContextFactory.of());
 
         assertThat(output.getWasAcknowledged(), is(false));
         assertThat(output.getUpsertedId(), nullValue());
-        assertThat(output.getMatchedCount(), is(0L));
+        assertThat(output.getMatchedCount(), nullValue());
         assertThat(output.getModifiedCount(), nullValue());
-
-        // the $inc was applied
-        try (MongoClient client = getMongoClient()) {
-            Document doc = client.getDatabase(database).getCollection("unack_update")
-                .find(Filters.eq("name", "John Doe")).first();
-            assertThat(doc.getInteger("visits"), is(2));
-        }
+        awaitCount(database, "unack_update", Filters.eq("visits", 2), 1);
     }
 
     @Test
     void deleteUnacknowledged() throws Exception {
-        RunContext runContext = runContextFactory.of();
-        String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
-
-        try (MongoClient client = getMongoClient()) {
-            client.getDatabase(database).getCollection("unack_delete")
-                .insertOne(new Document("name", "John Doe"));
+        var database = database();
+        try (var client = getMongoClient()) {
+            client.getDatabase(database).getCollection("unack_delete").insertOne(new Document("name", "John Doe"));
         }
 
-        Delete delete = Delete.builder()
+        var output = Delete.builder()
             .connection(unacknowledgedConnection())
             .database(Property.ofValue(database))
             .collection(Property.ofValue("unack_delete"))
             .filter(ImmutableMap.of("name", "John Doe"))
-            .build();
-
-        Delete.Output output = delete.run(runContext);
+            .build()
+            .run(runContextFactory.of());
 
         assertThat(output.getWasAcknowledged(), is(false));
-        assertThat(output.getDeletedCount(), is(0L));
-
-        // the delete went through
-        try (MongoClient client = getMongoClient()) {
-            assertThat(
-                client.getDatabase(database).getCollection("unack_delete").countDocuments(),
-                is(0L)
-            );
-        }
+        assertThat(output.getDeletedCount(), nullValue());
+        awaitCount(database, "unack_delete", Filters.empty(), 0);
     }
 
     @Test
     void loadUnacknowledged() throws Exception {
-        RunContext runContext = runContextFactory.of();
-        String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
-
-        // 5 records with chunk 2: before the fix only the first chunk was written and the task failed
-        File tempFile = File.createTempFile("unacknowledged_load_", ".trs");
-        try (OutputStream output = new FileOutputStream(tempFile)) {
-            for (int i = 0; i < 5; i++) {
-                FileSerde.write(output, ImmutableMap.of("name", "john-" + i));
+        var database = database();
+        var file = File.createTempFile("unacknowledged_load_", ".ion");
+        try (var output = new FileOutputStream(file)) {
+            for (var i = 0; i < 5; i++) {
+                FileSerde.write(output, ImmutableMap.of("name", "john-%d".formatted(i)));
             }
         }
-        URI uri = storageInterface.put(TenantService.MAIN_TENANT, null, URI.create("/" + IdUtils.create() + ".ion"), new FileInputStream(tempFile));
 
-        Load load = Load.builder()
+        // 5 records in chunks of 2: before the fix the task failed after the first chunk and never sent the rest
+        var output = Load.builder()
             .connection(unacknowledgedConnection())
             .database(Property.ofValue(database))
             .collection(Property.ofValue("unack_load"))
-            .from(Property.ofValue(uri.toString()))
+            .from(Property.ofValue(upload(file).toString()))
             .chunk(Property.ofValue(2))
-            .build();
-
-        Load.Output output = load.run(runContext);
+            .build()
+            .run(runContextFactory.of());
 
         assertThat(output.getSize(), is(5L));
         assertThat(output.getWasAcknowledged(), is(false));
         assertThat(output.getInsertedCount(), is(0));
-
-        // the whole file was written, not just the first chunk
-        try (MongoClient client = getMongoClient()) {
-            assertThat(
-                client.getDatabase(database).getCollection("unack_load").countDocuments(),
-                is(5L)
-            );
-        }
+        awaitCount(database, "unack_load", Filters.empty(), 5);
     }
 
     @Test
     void bulkUnacknowledged() throws Exception {
-        RunContext runContext = runContextFactory.of();
-        String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
-
-        File tempFile = File.createTempFile("unacknowledged_bulk_", ".trs");
-        try (OutputStream output = new FileOutputStream(tempFile)) {
-            for (int i = 0; i < 5; i++) {
-                output.write(("{ insertOne: { \"document\": { \"name\": \"john-" + i + "\" } } }\n").getBytes(StandardCharsets.UTF_8));
+        var database = database();
+        var file = File.createTempFile("unacknowledged_bulk_", ".ion");
+        try (var output = new FileOutputStream(file)) {
+            for (var i = 0; i < 5; i++) {
+                output.write("{ insertOne: { \"document\": { \"name\": \"john-%d\" } } }\n".formatted(i).getBytes(StandardCharsets.UTF_8));
             }
         }
-        URI uri = storageInterface.put(TenantService.MAIN_TENANT, null, URI.create("/" + IdUtils.create() + ".ion"), new FileInputStream(tempFile));
 
-        Bulk bulk = Bulk.builder()
+        var output = Bulk.builder()
             .connection(unacknowledgedConnection())
             .database(Property.ofValue(database))
             .collection(Property.ofValue("unack_bulk"))
-            .from(Property.ofValue(uri.toString()))
+            .from(Property.ofValue(upload(file).toString()))
             .chunk(Property.ofValue(2))
-            .build();
-
-        Bulk.Output output = bulk.run(runContext);
+            .build()
+            .run(runContextFactory.of());
 
         assertThat(output.getSize(), is(5L));
         assertThat(output.getWasAcknowledged(), is(false));
         assertThat(output.getInsertedCount(), is(0));
+        awaitCount(database, "unack_bulk", Filters.empty(), 5);
+    }
 
-        try (MongoClient client = getMongoClient()) {
-            assertThat(
-                client.getDatabase(database).getCollection("unack_bulk").countDocuments(),
-                is(5L)
-            );
+    private static String database() {
+        return "ut_%s".formatted(IdUtils.create().toLowerCase(Locale.ROOT));
+    }
+
+    private static MongoDbConnection unacknowledgedConnection() {
+        var uri = "%s%sw=0".formatted(connectionUri, connectionUri.contains("?") ? "&" : "?");
+        return MongoDbConnection.builder().uri(Property.ofValue(uri)).build();
+    }
+
+    private URI upload(File file) throws Exception {
+        try (var input = new FileInputStream(file)) {
+            return storageInterface.put(TenantService.MAIN_TENANT, null, URI.create("/%s.ion".formatted(IdUtils.create())), input);
+        }
+    }
+
+    // a w=0 write returns before the server applies it, so the check waits for it instead of reading once
+    private void awaitCount(String database, String collection, Bson filter, long expected) throws Exception {
+        try (var client = getMongoClient()) {
+            BooleanSupplier reached = () -> client.getDatabase(database).getCollection(collection).countDocuments(filter) == expected;
+            Await.until(reached, Duration.ofMillis(20), Duration.ofSeconds(10));
         }
     }
 }

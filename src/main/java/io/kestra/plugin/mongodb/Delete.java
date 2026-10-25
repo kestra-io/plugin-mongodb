@@ -106,7 +106,7 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
             MongoCollection<Bson> collection = this.collection(runContext, client);
 
             DeleteResult deleteResult;
-            if (Operation.DELETE_ONE.equals(runContext.render(this.operation).as(Operation.class).orElseThrow())) {
+            if (Operation.DELETE_ONE.equals(rOperation)) {
                 deleteResult = collection.deleteOne(bsonFilter);
             } else {
                 deleteResult = collection.deleteMany(bsonFilter);
@@ -114,9 +114,8 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
 
             logger.debug("Delete doc with filter: {}", bsonFilter);
 
-            // an unacknowledged write (w=0) carries no counts: getDeletedCount() throws on it,
-            // including in the metric below
-            boolean acknowledged = deleteResult.wasAcknowledged();
+            // a w=0 result has no count, getDeletedCount() throws on it
+            var acknowledged = deleteResult.wasAcknowledged();
 
             if (acknowledged) {
                 runContext.metric(
@@ -130,7 +129,7 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
 
             return Output.builder()
                 .wasAcknowledged(acknowledged)
-                .deletedCount(acknowledged ? deleteResult.getDeletedCount() : 0L)
+                .deletedCount(acknowledged ? deleteResult.getDeletedCount() : null)
                 .build();
         }
     }
@@ -150,8 +149,8 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
 
         @Schema(
             title = "Documents deleted",
-            description = "0 for unacknowledged writes (`w=0`), which have no counts to report."
+            description = "Null for unacknowledged writes (`w=0`), which have no counts to report."
         )
-        private final long deletedCount;
+        private final Long deletedCount;
     }
 }

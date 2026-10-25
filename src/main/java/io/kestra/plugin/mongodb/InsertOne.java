@@ -1,6 +1,5 @@
 package io.kestra.plugin.mongodb;
 
-import java.util.Objects;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import org.bson.BsonDocument;
@@ -108,9 +107,6 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
 
             logger.info("Insert doc: {}", bsonDocument);
 
-            // an unacknowledged write (w=0) carries no inserted id: getInsertedId() throws on it
-            boolean acknowledged = insertOneResult.wasAcknowledged();
-
             runContext.metric(
                 Counter.of(
                     "inserted.count", 1,
@@ -119,9 +115,10 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
                 )
             );
 
+            // withId set the _id client-side, so it is known even when a w=0 result cannot report it
             return Output.builder()
-                .insertedId(acknowledged ? MongoDbService.toIdString(Objects.requireNonNull(insertOneResult.getInsertedId())) : null)
-                .wasAcknowledged(acknowledged)
+                .insertedId(MongoDbService.toIdString(bsonDocument.get("_id")))
+                .wasAcknowledged(insertOneResult.wasAcknowledged())
                 .build();
         }
     }
@@ -139,7 +136,7 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
                 - UUID (Binary subtype 4): its canonical string
                 - any other type, including a legacy UUID (Binary subtype 3) or a document: its relaxed MongoDB Extended JSON, such as `{"a": 1}`
 
-                Null for unacknowledged writes (`w=0`), which have no id to report."""
+                With an unacknowledged write concern (`w=0`) it is the id that was sent, the insert itself is not confirmed."""
         )
         private String insertedId;
 
