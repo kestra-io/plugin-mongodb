@@ -66,7 +66,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
             MongoCollection<Bson> collection = this.collection(runContext, client);
 
             AtomicLong count = new AtomicLong();
-            Progress progress = new Progress();
+            var progress = new Progress(collection.getWriteConcern().isAcknowledged());
 
             var renderedChunk = runContext.render(this.chunk).as(Integer.class).orElse(null);
             Flux<BulkWriteResult> flowable = this.source(runContext, inputStream)
@@ -127,11 +127,16 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
     private static class Progress {
         private long requests;
         private long applied;
+        private final boolean acknowledged;
         private int insertedCount;
         private int matchedCount;
         private int modifiedCount;
         private int deletedCount;
         private int upsertedCount;
+
+        Progress(boolean acknowledged) {
+            this.acknowledged = acknowledged;
+        }
 
         BulkWriteResult write(MongoCollection<Bson> collection, List<WriteModel<Bson>> chunk) {
             var records = range(this.applied + 1, this.applied + chunk.size());
@@ -172,6 +177,11 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
         }
 
         private void add(BulkWriteResult result) {
+            // a w=0 result throws on every getter, so its counts are skipped and the next chunks still run
+            if (!result.wasAcknowledged()) {
+                return;
+            }
+
             this.insertedCount += result.getInsertedCount();
             this.matchedCount += result.getMatchedCount();
             this.modifiedCount += result.getModifiedCount();
@@ -182,6 +192,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
         Output output(long size) {
             return Output.builder()
                 .size(size)
+                .wasAcknowledged(this.acknowledged)
                 .matchedCount(this.matchedCount)
                 .insertedCount(this.insertedCount)
                 .modifiedCount(this.modifiedCount)
@@ -216,36 +227,42 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
         private Long size;
 
         @Schema(
+            title = "Whether the writes were acknowledged",
+            description = "False with an unacknowledged write concern (`w=0`): the counts are then 0."
+        )
+        private Boolean wasAcknowledged;
+
+        @Schema(
             title = "Inserted documents",
-            description = "Count of documents created by bulk writes."
+            description = "Count of documents created by bulk writes. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int insertedCount = 0;
 
         @Schema(
             title = "Matched documents",
-            description = "Documents matched by update or replacement models."
+            description = "Documents matched by update or replacement models. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int matchedCount = 0;
 
         @Schema(
             title = "Deleted documents",
-            description = "Documents removed by bulk delete models."
+            description = "Documents removed by bulk delete models. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int deletedCount = 0;
 
         @Schema(
             title = "Modified documents",
-            description = "Documents updated by bulk operations."
+            description = "Documents updated by bulk operations. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int modifiedCount = 0;
 
         @Schema(
             title = "Upserted documents",
-            description = "Documents created by update or replacement models with `upsert: true` that matched no document. Only `Bulk` sends these models, so it's always 0 for `Load`."
+            description = "Documents created by update or replacement models with `upsert: true` that matched no document. Only `Bulk` sends these models, so it's always 0 for `Load`. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int upsertedCount = 0;

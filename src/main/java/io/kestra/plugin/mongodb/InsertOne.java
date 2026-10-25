@@ -1,6 +1,5 @@
 package io.kestra.plugin.mongodb;
 
-import java.util.Objects;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import org.bson.BsonDocument;
@@ -116,8 +115,9 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
                 )
             );
 
+            // withId set the _id client-side, so it is known even when a w=0 result cannot report it
             return Output.builder()
-                .insertedId(MongoDbService.toIdString(Objects.requireNonNull(insertOneResult.getInsertedId())))
+                .insertedId(MongoDbService.toIdString(bsonDocument.get("_id")))
                 .wasAcknowledged(insertOneResult.wasAcknowledged())
                 .build();
         }
@@ -134,7 +134,9 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
                 - String: as is
                 - Int32, Int64, Double or Decimal128: the number
                 - UUID (Binary subtype 4): its canonical string
-                - any other type, including a legacy UUID (Binary subtype 3) or a document: its relaxed MongoDB Extended JSON, such as `{"a": 1}`"""
+                - any other type, including a legacy UUID (Binary subtype 3) or a document: its relaxed MongoDB Extended JSON, such as `{"a": 1}`
+
+                With an unacknowledged write concern (`w=0`) it is the id that was sent, the insert itself is not confirmed."""
         )
         private String insertedId;
 

@@ -114,17 +114,22 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
 
             logger.debug("Delete doc with filter: {}", bsonFilter);
 
-            runContext.metric(
-                Counter.of(
-                    "deleted.count", deleteResult.getDeletedCount(),
-                    "database", collection.getNamespace().getDatabaseName(),
-                    "collection", collection.getNamespace().getCollectionName()
-                )
-            );
+            // a w=0 result has no count, getDeletedCount() throws on it
+            var acknowledged = deleteResult.wasAcknowledged();
+
+            if (acknowledged) {
+                runContext.metric(
+                    Counter.of(
+                        "deleted.count", deleteResult.getDeletedCount(),
+                        "database", collection.getNamespace().getDatabaseName(),
+                        "collection", collection.getNamespace().getCollectionName()
+                    )
+                );
+            }
 
             return Output.builder()
-                .wasAcknowledged(deleteResult.wasAcknowledged())
-                .deletedCount(deleteResult.getDeletedCount())
+                .wasAcknowledged(acknowledged)
+                .deletedCount(acknowledged ? deleteResult.getDeletedCount() : null)
                 .build();
         }
     }
@@ -143,8 +148,9 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
         private Boolean wasAcknowledged;
 
         @Schema(
-            title = "Documents deleted"
+            title = "Documents deleted",
+            description = "Null for unacknowledged writes (`w=0`), which have no counts to report."
         )
-        private final long deletedCount;
+        private final Long deletedCount;
     }
 }
