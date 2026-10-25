@@ -100,7 +100,7 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
     public InsertOne.Output run(RunContext runContext) throws Exception {
         Logger logger = runContext.logger();
 
-        try (MongoClient client = this.connection.client(runContext)) {
+        try (MongoClient client = this.client(runContext)) {
             MongoCollection<Bson> collection = this.collection(runContext, client);
 
             BsonDocument bsonDocument = MongoDbService.toDocument(runContext, this.document);

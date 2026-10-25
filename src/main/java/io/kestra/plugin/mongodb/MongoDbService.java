@@ -31,12 +31,17 @@ public abstract class MongoDbService {
         if (value instanceof String) {
             return BsonDocument.parse(runContext.render((String) value));
         } else if (value instanceof Map) {
-            return BsonDocument.parse(JSON_WITH_NULL_MAP_ENTRIES.writeValueAsString(runContext.render((Map<String, Object>) value)));
+            return toDocument(runContext.render((Map<String, Object>) value));
         } else if (value == null) {
             return new BsonDocument();
         } else {
             throw new IllegalVariableEvaluationException("Invalid value type '" + value.getClass() + "'");
         }
+    }
+
+    // for values that are already rendered: rendering them again would evaluate data as Pebble expressions
+    public static BsonDocument toDocument(Map<String, Object> rendered) throws IOException {
+        return BsonDocument.parse(JSON_WITH_NULL_MAP_ENTRIES.writeValueAsString(rendered));
     }
 
     // add the _id before the driver does: with MongoCollection<Bson> it fails when the last field name written is a nested _id

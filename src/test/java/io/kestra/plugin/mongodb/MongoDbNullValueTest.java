@@ -167,7 +167,7 @@ class MongoDbNullValueTest {
             """;
         var task = JacksonMapper.ofYaml().readValue(yaml, Aggregate.class);
         var stages = task.renderedStages(this.runContext());
-        var document = MongoDbService.toDocument(this.runContext(), stages.getFirst());
+        var document = MongoDbService.toDocument(stages.getFirst());
 
         assertThat(document.getDocument("$match").get("k").isNull(), is(true));
     }
