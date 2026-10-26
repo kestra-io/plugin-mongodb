@@ -152,16 +152,14 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
                     updateResult = collection.updateMany(bsonFilter, bsonDocument);
                 }
             } catch (MongoWriteConcernException e) {
-                // the update was applied on the primary but the requested write concern was not met in time;
-                // keep the counts the server reported so the task does not fail empty (see AbstractLoad)
+                // applied on the primary, only the write concern failed; WriteConcernResult has no nModified, so modifiedCount stays null (see AbstractLoad)
                 var writeConcernResult = e.getWriteResult();
                 throw new RunnableTaskException(
-                    "The update was applied on the primary but the requested write concern was not met in time, so it may not be durable: " + e.getMessage(),
+                    MongoDbService.writeConcernErrorMessage(e),
                     e,
                     Output.builder()
                         .wasAcknowledged(true)
                         .matchedCount((long) writeConcernResult.getCount())
-                        .modifiedCount((long) writeConcernResult.getCount())
                         .upsertedId(writeConcernResult.getUpsertedId() != null ? MongoDbService.toIdString(writeConcernResult.getUpsertedId()) : null)
                         .build()
                 );
@@ -228,7 +226,9 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
 
         @Schema(
             title = "The number of documents modified by the update",
-            description = "Null for unacknowledged writes (`w=0`), which have no counts to report."
+            description = """
+                Null for unacknowledged writes (`w=0`), which have no counts to report, and on a write concern error,
+                where the driver reports only a matched count and not how many documents were modified."""
         )
         private final Long modifiedCount;
     }

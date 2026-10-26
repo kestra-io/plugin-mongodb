@@ -109,10 +109,9 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
             try {
                 insertOneResult = collection.insertOne(MongoDbService.withId(bsonDocument));
             } catch (MongoWriteConcernException e) {
-                // the document was written on the primary but the requested write concern was not met in time;
-                // keep the output (the client-side _id) so the task does not fail empty and a retry does not duplicate it (see AbstractLoad)
+                // applied on the primary, only the write concern failed; keep the id so the task does not fail empty (see AbstractLoad)
                 throw new RunnableTaskException(
-                    "The insert was applied on the primary but the requested write concern was not met in time, so it may not be durable: " + e.getMessage(),
+                    MongoDbService.writeConcernErrorMessage(e),
                     e,
                     Output.builder()
                         .insertedId(MongoDbService.toIdString(bsonDocument.get("_id")))

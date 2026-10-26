@@ -115,10 +115,9 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
                     deleteResult = collection.deleteMany(bsonFilter);
                 }
             } catch (MongoWriteConcernException e) {
-                // the delete was applied on the primary but the requested write concern was not met in time;
-                // keep the count the server reported so the task does not fail empty (see AbstractLoad)
+                // applied on the primary, only the write concern failed; keep the count so the task does not fail empty (see AbstractLoad)
                 throw new RunnableTaskException(
-                    "The delete was applied on the primary but the requested write concern was not met in time, so it may not be durable: " + e.getMessage(),
+                    MongoDbService.writeConcernErrorMessage(e),
                     e,
                     Output.builder()
                         .wasAcknowledged(true)
