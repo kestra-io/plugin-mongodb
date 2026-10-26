@@ -25,6 +25,7 @@ import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.FileSerde;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
@@ -46,11 +47,11 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
 
     @Schema(
         title = "Bulk chunk size",
-        description = "Number of write models sent per bulkWrite call; defaults to 1000."
+        description = "Number of write models sent per bulkWrite call; defaults to 1000. Must be at least 1."
     )
     @Builder.Default
     @PluginProperty(group = "execution")
-    private Property<Integer> chunk = Property.ofValue(1000);
+    private Property<@Min(1) Integer> chunk = Property.ofValue(1000);
 
     abstract protected Flux<WriteModel<Bson>> source(RunContext runContext, InputStream inputStream) throws Exception;
 
@@ -58,6 +59,12 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
     public Output run(RunContext runContext) throws Exception {
         Logger logger = runContext.logger();
         URI from = new URI(runContext.render(this.from).as(String.class).orElseThrow());
+
+        // guards a null chunk; core validation rejects values below 1 on render
+        var rChunk = runContext.render(this.chunk).as(Integer.class).orElse(null);
+        if (rChunk == null || rChunk < 1) {
+            throw new IllegalArgumentException("Invalid `chunk` value (" + rChunk + "): chunk must be at least 1");
+        }
 
         try (
             MongoClient client = this.client(runContext);
@@ -68,13 +75,12 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
             AtomicLong count = new AtomicLong();
             var progress = new Progress(collection.getWriteConcern().isAcknowledged());
 
-            var renderedChunk = runContext.render(this.chunk).as(Integer.class).orElse(null);
             Flux<BulkWriteResult> flowable = this.source(runContext, inputStream)
                 .doOnNext(docWriteRequest ->
                 {
                     count.incrementAndGet();
                 })
-                .buffer(renderedChunk, renderedChunk)
+                .buffer(rChunk, rChunk)
                 .map(indexRequests ->
                 {
                     List<WriteModel<Bson>> bulkOperations = new ArrayList<>(indexRequests);
