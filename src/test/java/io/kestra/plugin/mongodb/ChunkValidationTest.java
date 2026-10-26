@@ -1,12 +1,17 @@
 package io.kestra.plugin.mongodb;
 
+import java.util.Map;
+
 import org.junit.jupiter.api.Test;
 
 import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContextFactory;
+import io.kestra.core.utils.IdUtils;
+import io.kestra.core.utils.TestsUtils;
 
 import jakarta.inject.Inject;
+import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Validator;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -14,10 +19,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-/**
- * No MongoDB container: the chunk checks live before any client or storage use, so these run
- * without Docker. The container tests in LoadTest and BulkTest still cover real loads.
- */
+/** No container: the chunk checks run before any client or storage use. */
 @KestraTest
 class ChunkValidationTest {
     @Inject
@@ -28,6 +30,8 @@ class ChunkValidationTest {
 
     private static Load task(int chunk) {
         return Load.builder()
+            .id(IdUtils.create())
+            .type(Load.class.getName())
             .connection(
                 MongoDbConnection.builder()
                     .uri(Property.ofValue("mongodb://localhost:27017"))
@@ -40,40 +44,42 @@ class ChunkValidationTest {
             .build();
     }
 
-    private static boolean hasChunkViolation(Load task) {
+    private boolean hasChunkViolation(Load task) {
         return validator.validate(task).stream()
             .anyMatch(violation -> violation.getPropertyPath().toString().contains("chunk"));
     }
 
     @Test
-    void chunkZeroFailsValidation() {
+    void chunkZeroViolatesMinConstraint() {
         assertThat(hasChunkViolation(task(0)), is(true));
     }
 
     @Test
-    void chunkNegativeFailsValidation() {
+    void chunkNegativeViolatesMinConstraint() {
         assertThat(hasChunkViolation(task(-5)), is(true));
     }
 
     @Test
-    void chunkOnePassesValidation() {
+    void chunkOneSatisfiesMinConstraint() {
         assertThat(hasChunkViolation(task(1)), is(false));
     }
 
     @Test
-    void chunkZeroFailsFastWithClearMessage() throws Exception {
+    void chunkZeroRejectedOnWorkerWithClearMessage() throws Exception {
+        var task = task(0);
         var error = assertThrows(
-            IllegalArgumentException.class,
-            () -> task(0).run(runContextFactory.of())
+            ConstraintViolationException.class,
+            () -> task.run(TestsUtils.mockRunContext(runContextFactory, task, Map.of()))
         );
         assertThat(error.getMessage(), containsString("chunk"));
     }
 
     @Test
-    void chunkNegativeFailsFastWithClearMessage() throws Exception {
+    void chunkNegativeRejectedOnWorkerWithClearMessage() throws Exception {
+        var task = task(-5);
         var error = assertThrows(
-            IllegalArgumentException.class,
-            () -> task(-5).run(runContextFactory.of())
+            ConstraintViolationException.class,
+            () -> task.run(TestsUtils.mockRunContext(runContextFactory, task, Map.of()))
         );
         assertThat(error.getMessage(), containsString("chunk"));
     }

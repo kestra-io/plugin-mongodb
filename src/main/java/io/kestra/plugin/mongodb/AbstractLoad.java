@@ -60,13 +60,10 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
         Logger logger = runContext.logger();
         URI from = new URI(runContext.render(this.from).as(String.class).orElseThrow());
 
-        // The annotation above rejects literal values below 1 at flow validation, but a rendered
-        // expression can still produce one, so guard here before anything buffers on the chunk size.
-        // Without this, chunk 0 fails deep in Flux.buffer with "size > 0 required but it was 0",
-        // which never mentions chunk.
-        var renderedChunk = runContext.render(this.chunk).as(Integer.class).orElse(null);
-        if (renderedChunk == null || renderedChunk < 1) {
-            throw new IllegalArgumentException("Invalid `chunk` value (" + renderedChunk + "): chunk must be at least 1");
+        // guards a null chunk; core validation rejects values below 1 on render
+        var rChunk = runContext.render(this.chunk).as(Integer.class).orElse(null);
+        if (rChunk == null || rChunk < 1) {
+            throw new IllegalArgumentException("Invalid `chunk` value (" + rChunk + "): chunk must be at least 1");
         }
 
         try (
@@ -83,7 +80,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
                 {
                     count.incrementAndGet();
                 })
-                .buffer(renderedChunk, renderedChunk)
+                .buffer(rChunk, rChunk)
                 .map(indexRequests ->
                 {
                     List<WriteModel<Bson>> bulkOperations = new ArrayList<>(indexRequests);
