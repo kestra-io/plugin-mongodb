@@ -4,6 +4,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -137,6 +138,78 @@ class LoadExtendedJsonTest {
         assertThat(encoded.getObjectId("_id").getValue().toHexString(), is("60930c39a982931c20ef6cd6"));
         assertThat(encoded.containsKey("id"), is(false));
         assertThat(encoded.getString("name").getValue(), is("john"));
+    }
+
+    @Test
+    void shouldAcceptCustomStringAsIdKey() throws Exception {
+        var load = Load.builder().idKey(Property.ofValue("customId")).build();
+
+        var encoded = encode(load, List.of(Map.of("customId", "order-12345", "name", "john"))).getFirst();
+
+        assertThat(encoded.get("_id").getBsonType(), is(BsonType.STRING));
+        assertThat(encoded.getString("_id").getValue(), is("order-12345"));
+        assertThat(encoded.containsKey("customId"), is(false));
+        assertThat(encoded.getString("name").getValue(), is("john"));
+    }
+
+    @Test
+    void shouldAcceptNumericAsIdKey() throws Exception {
+        var load = Load.builder().idKey(Property.ofValue("numId")).build();
+
+        var encoded = encode(load, List.of(Map.of("numId", 987654, "name", "john"))).getFirst();
+
+        assertThat(encoded.get("_id").getBsonType(), is(BsonType.INT32));
+        assertThat(encoded.getInt32("_id").getValue(), is(987654));
+        assertThat(encoded.containsKey("numId"), is(false));
+    }
+
+    @Test
+    void shouldGenerateIdWhenIdKeyFieldIsNull() throws Exception {
+        var load = Load.builder().idKey(Property.ofValue("customId")).build();
+
+        var record = new HashMap<String, Object>();
+        record.put("customId", null);
+        record.put("name", "john");
+
+        var encoded = encode(load, List.of(record)).getFirst();
+
+        assertThat(encoded.get("_id").getBsonType(), is(BsonType.OBJECT_ID));
+        assertThat(encoded.containsKey("customId"), is(false));
+        assertThat(encoded.getString("name").getValue(), is("john"));
+    }
+
+    @Test
+    void shouldGenerateIdWhenExplicitUnderscoreIdIsNullWithoutIdKey() throws Exception {
+        var load = Load.builder().build();
+
+        var record = new HashMap<String, Object>();
+        record.put("_id", null);
+        record.put("name", "john");
+
+        var encoded = encode(load, List.of(record)).getFirst();
+
+        assertThat(encoded.get("_id").getBsonType(), is(BsonType.OBJECT_ID));
+        assertThat(encoded.getString("name").getValue(), is("john"));
+    }
+
+    @Test
+    void shouldGenerateIdWhenIdKeyFieldIsMissing() throws Exception {
+        var load = Load.builder().idKey(Property.ofValue("customId")).build();
+
+        var encoded = encode(load, List.of(Map.of("name", "john"))).getFirst();
+
+        assertThat(encoded.get("_id").getBsonType(), is(BsonType.OBJECT_ID));
+        assertThat(encoded.getString("name").getValue(), is("john"));
+    }
+
+    @Test
+    void shouldRetainCustomIdWhenIdKeyIsUnderscoreId() throws Exception {
+        var load = Load.builder().idKey(Property.ofValue("_id")).build();
+
+        var encoded = encode(load, List.of(Map.of("_id", "custom-key", "name", "john"))).getFirst();
+
+        assertThat(encoded.get("_id").getBsonType(), is(BsonType.STRING));
+        assertThat(encoded.getString("_id").getValue(), is("custom-key"));
     }
 
     @Test

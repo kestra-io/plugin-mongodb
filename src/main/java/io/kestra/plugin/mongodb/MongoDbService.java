@@ -46,7 +46,7 @@ public abstract class MongoDbService {
 
     // add the _id before the driver does: with MongoCollection<Bson> it fails when the last field name written is a nested _id
     public static <T extends Map<String, ? super BsonObjectId>> T withId(T document) {
-        if (!document.containsKey("_id")) {
+        if (document.get("_id") == null) {
             document.put("_id", new BsonObjectId());
         }
 
