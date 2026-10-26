@@ -126,7 +126,8 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
     @Schema(
         title = "Aggregation pipeline",
         description = """
-            List of stages as a BSON string or a map list, rendered before execution.
+            List of stages as a BSON string or a map list, rendered once before execution.
+            Values that come from data (inputs, outputs, documents) are kept as literal text and are not evaluated again as expressions.
             A null inside a map stage is dropped when the flow is parsed.
             Pass the pipeline as a JSON string when a stage needs a null, for example `[{"$match": {"k": null}}]`.
             """
@@ -186,13 +187,13 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
     public Aggregate.Output run(RunContext runContext) throws Exception {
         Logger logger = runContext.logger();
 
-        try (MongoClient client = this.connection.client(runContext)) {
+        try (MongoClient client = this.client(runContext)) {
             MongoCollection<BsonDocument> collection = this.collection(runContext, client, BsonDocument.class);
 
             List<Bson> pipelineStages = new ArrayList<>();
             if (this.pipeline != null) {
                 for (var stage : this.renderedStages(runContext)) {
-                    BsonDocument bsonStage = MongoDbService.toDocument(runContext, stage);
+                    var bsonStage = MongoDbService.toDocument(stage);
                     pipelineStages.add(bsonStage);
                     logger.debug("Pipeline stage: {}", bsonStage);
                 }

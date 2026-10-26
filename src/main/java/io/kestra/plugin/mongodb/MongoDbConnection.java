@@ -1,7 +1,10 @@
 package io.kestra.plugin.mongodb;
 
+import com.mongodb.ConnectionString;
+import com.mongodb.MongoClientSettings;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
+import com.mongodb.event.CommandListener;
 
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.models.annotations.PluginProperty;
@@ -28,7 +31,21 @@ public class MongoDbConnection {
     @PluginProperty(secret = true)
     private Property<@NotEmpty String> uri;
 
-    MongoClient client(RunContext runContext) throws IllegalVariableEvaluationException {
-        return MongoClients.create(runContext.render(uri).as(String.class).orElseThrow());
+    MongoClientSettings clientSettings(RunContext runContext) throws IllegalVariableEvaluationException {
+        return MongoClientSettings.builder()
+            .applyConnectionString(new ConnectionString(runContext.render(uri).as(String.class).orElseThrow()))
+            .build();
+    }
+
+    /**
+     * Creates the task's client from {@link #clientSettings(RunContext)} with {@code listener} attached, so the client's
+     * server sessions can be recorded and later killed. This is the single place the client is built.
+     */
+    MongoClient client(RunContext runContext, CommandListener listener) throws IllegalVariableEvaluationException {
+        return MongoClients.create(
+            MongoClientSettings.builder(this.clientSettings(runContext))
+                .addCommandListener(listener)
+                .build()
+        );
     }
 }

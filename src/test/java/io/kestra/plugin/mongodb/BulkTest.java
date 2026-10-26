@@ -17,6 +17,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.bson.BsonDocument;
+import org.bson.BsonInt32;
 import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
@@ -27,6 +29,11 @@ import com.mongodb.ServerAddress;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.DeleteManyModel;
+import com.mongodb.client.model.DeleteOneModel;
+import com.mongodb.client.model.ReplaceOneModel;
+import com.mongodb.client.model.UpdateOneModel;
+import com.mongodb.event.CommandListener;
 
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.junit.annotations.KestraTest;
@@ -403,8 +410,8 @@ class BulkTest extends MongoDbContainer {
     @SuperBuilder
     private static class SecondWriteFailsConnection extends MongoDbConnection {
         @Override
-        MongoClient client(RunContext runContext) throws IllegalVariableEvaluationException {
-            return failSecondWrite(super.client(runContext), MongoClient.class, new AtomicInteger());
+        MongoClient client(RunContext runContext, CommandListener listener) throws IllegalVariableEvaluationException {
+            return failSecondWrite(super.client(runContext, listener), MongoClient.class, new AtomicInteger());
         }
 
         // proxies the client, and the databases and collections it returns, down to bulkWrite
@@ -473,6 +480,222 @@ class BulkTest extends MongoDbContainer {
 
     private static Double metric(RunContext runContext, String name) {
         return (Double) runContext.metrics().stream().filter(e -> e.getName().equals(name)).findFirst().orElseThrow().getValue();
+    }
+
+    @Test
+    void blankAndWhitespaceLinesAreSkipped() throws IOException {
+        var input = new BufferedReader(new StringReader(
+            "\n"
+            + "{\"insertOne\": {\"document\": {\"a\": 1}}}\n"
+            + "   \n"
+            + "{\"insertOne\": {\"document\": {\"b\": 2}}}\n"
+            + "\n"
+        ));
+
+        var requests = Flux
+            .create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER)
+            .collectList()
+            .block();
+
+        assertThat(requests, hasSize(2));
+    }
+
+    @Test
+    void lineWithMultipleOperationKeysFails() throws IOException {
+        var input = new BufferedReader(new StringReader(
+            "{\"insertOne\": {\"document\": {\"_id\": 1}}, \"deleteMany\": {\"filter\": {}}}\n"
+        ));
+
+        var ex = assertThrows(
+            IllegalArgumentException.class,
+            () -> Flux
+                .create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER)
+                .count()
+                .block()
+        );
+
+        assertThat(ex.getMessage(), startsWith("Invalid bulk request on line 1: expected exactly 1 operation key"));
+    }
+
+    @Test
+    void deleteOneAndDeleteManyHonourCollationAndHint() throws IOException {
+        var input = new BufferedReader(new StringReader(
+            "{\"deleteOne\":  {\"filter\": {\"city\": \"paris\"}, \"collation\": {\"locale\": \"en\", \"strength\": 2}, \"hint\": \"idx_city\"}}\n"
+            + "{\"deleteMany\": {\"filter\": {\"city\": \"paris\"}, \"collation\": {\"locale\": \"en\", \"strength\": 2}, \"hint\": {\"city\": 1}}}\n"
+        ));
+
+        var requests = Flux
+            .create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER)
+            .collectList()
+            .block();
+
+        assertThat(requests, hasSize(2));
+
+        var deleteOne = (DeleteOneModel<?>) requests.getFirst();
+        assertThat(deleteOne.getOptions().getCollation().getLocale(), is("en"));
+        assertThat(deleteOne.getOptions().getHintString(), is("idx_city"));
+
+        var deleteMany = (DeleteManyModel<?>) requests.get(1);
+        assertThat(deleteMany.getOptions().getCollation().getLocale(), is("en"));
+        assertThat(deleteMany.getOptions().getHint(), is(new BsonDocument("city", new BsonInt32(1))));
+    }
+
+    @Test
+    void updateOneAndReplaceOneHonourHint() throws IOException {
+        var input = new BufferedReader(new StringReader(
+            "{\"updateOne\":  {\"filter\": {\"_id\": 1}, \"update\": {\"$set\": {\"a\": 1}}, \"hint\": \"idx_id\"}}\n"
+            + "{\"replaceOne\": {\"filter\": {\"_id\": 1}, \"replacement\": {\"b\": 2},  \"hint\": {\"_id\": 1}}}\n"
+        ));
+
+        var requests = Flux
+            .create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER)
+            .collectList()
+            .block();
+
+        assertThat(requests, hasSize(2));
+
+        var updateOne = (UpdateOneModel<?>) requests.getFirst();
+        assertThat(updateOne.getOptions().getHintString(), is("idx_id"));
+
+        var replaceOne = (ReplaceOneModel<?>) requests.get(1);
+        assertThat(replaceOne.getReplaceOptions().getHint(), is(new BsonDocument("_id", new BsonInt32(1))));
+    }
+
+    @Test
+    void invalidHintTypeFails() {
+        var input = new BufferedReader(new StringReader(
+            "{\"deleteOne\": {\"filter\": {\"_id\": 1}, \"hint\": 123}}\n"
+        ));
+
+        var ex = assertThrows(
+            IllegalArgumentException.class,
+            () -> Flux
+                .create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER)
+                .count()
+                .block()
+        );
+
+        assertThat(ex.getMessage(), startsWith("Invalid bulk request on line 1: hint must be an index name or a key pattern document"));
+    }
+
+    @Test
+    void deleteManyHonoursCollation() throws Exception {
+        var database = newDatabase();
+        try (MongoClient client = getMongoClient()) {
+            client.getDatabase(database).getCollection("coll_delete")
+                .insertMany(List.of(
+                    new Document("city", "Paris"),
+                    new Document("city", "paris"),
+                    new Document("city", "PARIS"),
+                    new Document("city", "London")
+                ));
+        }
+
+        var output = runBulk(
+            database, "coll_delete",
+            "{\"deleteMany\": {\"filter\": {\"city\": \"paris\"}, \"collation\": {\"locale\": \"en\", \"strength\": 2}}}"
+        );
+
+        assertThat(output.getDeletedCount(), is(3));
+        assertThat(findAll(database, "coll_delete"), hasSize(1));
+    }
+
+    @Test
+    void updateOneWithUnknownHintFails() throws Exception {
+        var database = newDatabase();
+        try (MongoClient client = getMongoClient()) {
+            client.getDatabase(database).getCollection("coll_hint")
+                .insertOne(new Document("_id", 1));
+        }
+
+        assertThrows(
+            Exception.class,
+            () -> runBulk(
+                database, "coll_hint",
+                "{\"updateOne\": {\"filter\": {\"_id\": 1}, \"update\": {\"$set\": {\"a\": 1}}, \"hint\": \"no_such_index\"}}"
+            )
+        );
+    }
+
+    @Test
+    void missingRequiredFieldsFailWithLineNumber() {
+        var operations = List.of(
+            "{\"deleteOne\": {}}",
+            "{\"deleteMany\": {}}",
+            "{\"updateOne\": {\"filter\": {}}}",
+            "{\"updateMany\": {\"filter\": {}}}",
+            "{\"replaceOne\": {\"filter\": {}}}"
+        );
+
+        var expectedErrors = List.of(
+            "Invalid bulk request on line 1: deleteOne requires a 'filter' document",
+            "Invalid bulk request on line 1: deleteMany requires a 'filter' document",
+            "Invalid bulk request on line 1: updateOne requires an 'update' document",
+            "Invalid bulk request on line 1: updateMany requires an 'update' document",
+            "Invalid bulk request on line 1: replaceOne requires a 'replacement' document"
+        );
+
+        for (int i = 0; i < operations.size(); i++) {
+            var input = new BufferedReader(new StringReader(operations.get(i)));
+            var ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> Flux.create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER)
+                    .count()
+                    .block()
+            );
+            assertThat(ex.getMessage(), is(expectedErrors.get(i)));
+        }
+    }
+
+    @Test
+    void unsupportedKeysFailWithLineNumber() {
+        var operations = List.of(
+            "{\"deleteOne\": {\"filter\": {}, \"unsupported\": 1}}",
+            "{\"deleteMany\": {\"filter\": {}, \"invalid\": true}}",
+            "{\"updateOne\": {\"filter\": {}, \"update\": {\"$set\": {\"a\": 1}}, \"extra\": \"x\"}}",
+            "{\"updateMany\": {\"filter\": {}, \"update\": {\"$set\": {\"a\": 1}}, \"extra\": \"x\"}}",
+            "{\"replaceOne\": {\"filter\": {}, \"replacement\": {}, \"extra\": 1}}"
+        );
+
+        var expectedErrors = List.of(
+            "Invalid bulk request on line 1: deleteOne does not support key 'unsupported'",
+            "Invalid bulk request on line 1: deleteMany does not support key 'invalid'",
+            "Invalid bulk request on line 1: updateOne does not support key 'extra'",
+            "Invalid bulk request on line 1: updateMany does not support key 'extra'",
+            "Invalid bulk request on line 1: replaceOne does not support key 'extra'"
+        );
+
+        for (int i = 0; i < operations.size(); i++) {
+            var input = new BufferedReader(new StringReader(operations.get(i)));
+            var ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> Flux.create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER)
+                    .count()
+                    .block()
+            );
+            assertThat(ex.getMessage(), is(expectedErrors.get(i)));
+        }
+    }
+
+    @Test
+    void blankLinesDoNotAlterEmittedRecordCountOnFailure() throws Exception {
+        var database = newDatabase();
+        var runContext = runContextFactory.of();
+        var bulk = Bulk.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("blank_line_failing"))
+            .from(Property.ofValue(store(
+                "{\"insertOne\": {\"document\": {\"_id\": 1}}}",
+                "",
+                "   ",
+                "{\"insertOne\": {\"document\": {\"_id\": 1}}}"
+            ).toString()))
+            .build();
+
+        var e = assertThrows(RunnableTaskException.class, () -> bulk.run(runContext));
+
+        assertThat(e.getMessage(), startsWith("Record 2 failed (1 record applied before it): E11000 duplicate key error"));
     }
 
     private static List<Document> findAll(String database, String collection) {
