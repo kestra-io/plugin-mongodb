@@ -5,6 +5,7 @@ import org.bson.BsonDocument;
 import org.bson.conversions.Bson;
 import org.slf4j.Logger;
 
+import com.mongodb.MongoWriteConcernException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.result.UpdateResult;
@@ -16,6 +17,7 @@ import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.RunnableTask;
+import io.kestra.core.models.tasks.RunnableTaskException;
 import io.kestra.core.runners.RunContext;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -141,12 +143,28 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
             MongoCollection<Bson> collection = this.collection(runContext, client);
 
             UpdateResult updateResult;
-            if (Operation.REPLACE_ONE.equals(rOperation)) {
-                updateResult = collection.replaceOne(bsonFilter, bsonDocument);
-            } else if (Operation.UPDATE_ONE.equals(rOperation)) {
-                updateResult = collection.updateOne(bsonFilter, bsonDocument);
-            } else {
-                updateResult = collection.updateMany(bsonFilter, bsonDocument);
+            try {
+                if (Operation.REPLACE_ONE.equals(rOperation)) {
+                    updateResult = collection.replaceOne(bsonFilter, bsonDocument);
+                } else if (Operation.UPDATE_ONE.equals(rOperation)) {
+                    updateResult = collection.updateOne(bsonFilter, bsonDocument);
+                } else {
+                    updateResult = collection.updateMany(bsonFilter, bsonDocument);
+                }
+            } catch (MongoWriteConcernException e) {
+                // the update was applied on the primary but the requested write concern was not met in time;
+                // keep the counts the server reported so the task does not fail empty (see AbstractLoad)
+                var writeConcernResult = e.getWriteResult();
+                throw new RunnableTaskException(
+                    "The update was applied on the primary but the requested write concern was not met in time, so it may not be durable: " + e.getMessage(),
+                    e,
+                    Output.builder()
+                        .wasAcknowledged(true)
+                        .matchedCount((long) writeConcernResult.getCount())
+                        .modifiedCount((long) writeConcernResult.getCount())
+                        .upsertedId(writeConcernResult.getUpsertedId() != null ? MongoDbService.toIdString(writeConcernResult.getUpsertedId()) : null)
+                        .build()
+                );
             }
 
             logger.debug("Updating doc: {} with filter: {}", bsonDocument, bsonFilter);

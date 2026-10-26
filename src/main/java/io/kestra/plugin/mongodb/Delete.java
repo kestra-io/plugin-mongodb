@@ -7,6 +7,7 @@ import org.bson.BsonDocument;
 import org.bson.conversions.Bson;
 import org.slf4j.Logger;
 
+import com.mongodb.MongoWriteConcernException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.result.DeleteResult;
@@ -18,6 +19,7 @@ import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.RunnableTask;
+import io.kestra.core.models.tasks.RunnableTaskException;
 import io.kestra.core.runners.RunContext;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -106,10 +108,23 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
             MongoCollection<Bson> collection = this.collection(runContext, client);
 
             DeleteResult deleteResult;
-            if (Operation.DELETE_ONE.equals(rOperation)) {
-                deleteResult = collection.deleteOne(bsonFilter);
-            } else {
-                deleteResult = collection.deleteMany(bsonFilter);
+            try {
+                if (Operation.DELETE_ONE.equals(rOperation)) {
+                    deleteResult = collection.deleteOne(bsonFilter);
+                } else {
+                    deleteResult = collection.deleteMany(bsonFilter);
+                }
+            } catch (MongoWriteConcernException e) {
+                // the delete was applied on the primary but the requested write concern was not met in time;
+                // keep the count the server reported so the task does not fail empty (see AbstractLoad)
+                throw new RunnableTaskException(
+                    "The delete was applied on the primary but the requested write concern was not met in time, so it may not be durable: " + e.getMessage(),
+                    e,
+                    Output.builder()
+                        .wasAcknowledged(true)
+                        .deletedCount((long) e.getWriteResult().getCount())
+                        .build()
+                );
             }
 
             logger.debug("Delete doc with filter: {}", bsonFilter);
