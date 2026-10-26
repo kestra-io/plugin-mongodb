@@ -3,6 +3,7 @@ package io.kestra.plugin.mongodb;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.AbstractMap;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -108,8 +109,14 @@ public abstract class MongoDbService {
 
             case STRING:
                 return doc.asString().getValue();
-            case BINARY:
-                return doc.asBinary().getData();
+            case BINARY: {
+                var binary = doc.asBinary();
+                // keep the subtype so Load writes it back as the same Binary; a bare byte array would reload as subtype 0 (#189)
+                if (binary.getType() == BsonBinarySubType.UUID_STANDARD.getValue() && binary.getData().length == 16) {
+                    return document("$uuid", binary.asUuid().toString());
+                }
+                return document("$binary", document("base64", Base64.getEncoder().encodeToString(binary.getData()), "subType", String.format("%02x", binary.getType() & 0xFF)));
+            }
 
             case BOOLEAN:
                 return doc.asBoolean().getValue();
