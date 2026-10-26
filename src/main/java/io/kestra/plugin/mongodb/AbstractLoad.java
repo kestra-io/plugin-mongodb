@@ -25,6 +25,7 @@ import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.FileSerde;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
@@ -46,11 +47,11 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
 
     @Schema(
         title = "Bulk chunk size",
-        description = "Number of write models sent per bulkWrite call; defaults to 1000."
+        description = "Number of write models sent per bulkWrite call; defaults to 1000. Must be at least 1."
     )
     @Builder.Default
     @PluginProperty(group = "execution")
-    private Property<Integer> chunk = Property.ofValue(1000);
+    private Property<@Min(1) Integer> chunk = Property.ofValue(1000);
 
     abstract protected Flux<WriteModel<Bson>> source(RunContext runContext, InputStream inputStream) throws Exception;
 
@@ -58,6 +59,15 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
     public Output run(RunContext runContext) throws Exception {
         Logger logger = runContext.logger();
         URI from = new URI(runContext.render(this.from).as(String.class).orElseThrow());
+
+        // The annotation above rejects literal values below 1 at flow validation, but a rendered
+        // expression can still produce one, so guard here before anything buffers on the chunk size.
+        // Without this, chunk 0 fails deep in Flux.buffer with "size > 0 required but it was 0",
+        // which never mentions chunk.
+        var renderedChunk = runContext.render(this.chunk).as(Integer.class).orElse(null);
+        if (renderedChunk == null || renderedChunk < 1) {
+            throw new IllegalArgumentException("Invalid `chunk` value (" + renderedChunk + "): chunk must be at least 1");
+        }
 
         try (
             MongoClient client = this.client(runContext);
@@ -68,7 +78,6 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
             AtomicLong count = new AtomicLong();
             var progress = new Progress(collection.getWriteConcern().isAcknowledged());
 
-            var renderedChunk = runContext.render(this.chunk).as(Integer.class).orElse(null);
             Flux<BulkWriteResult> flowable = this.source(runContext, inputStream)
                 .doOnNext(docWriteRequest ->
                 {
