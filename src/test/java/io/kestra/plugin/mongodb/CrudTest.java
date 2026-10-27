@@ -96,7 +96,8 @@ class CrudTest extends MongoDbContainer {
 
         Find.Output findOutput = find.run(runContext);
         assertThat(findOutput.getSize(), is(1L));
-        assertThat(((Map<String, Object>) findOutput.getRows().get(0)).get("_id"), is(insertOutput.getInsertedId()));
+        // Find rows now carry an ObjectId as its $oid wrapper, like every other wrapper type in map()
+        assertThat(((Map<String, Object>) findOutput.getRows().get(0)).get("_id"), is(Map.of("$oid", insertOutput.getInsertedId())));
 
         Delete delete = Delete.builder()
             .connection(

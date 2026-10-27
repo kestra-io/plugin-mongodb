@@ -136,9 +136,6 @@ public abstract class MongoDbService {
                     .map(MongoDbService::map)
                     .collect(Collectors.toList());
 
-            case OBJECT_ID:
-                return doc.asObjectId().getValue().toString();
-
             // deprecated types, read the way drivers usually decode them
             case SYMBOL:
                 return doc.asSymbol().getSymbol();
@@ -146,6 +143,10 @@ public abstract class MongoDbService {
                 return null;
 
             // no JSON equivalent: MongoDB Extended JSON, which Load writes back as the same BSON type
+            case OBJECT_ID:
+                // a bare hex string would load back as a String, so ObjectIds are wrapped like every other type here;
+                // otherwise Find with store: true followed by Load silently rewrites every ObjectId to a string
+                return document("$oid", doc.asObjectId().getValue().toHexString());
             case TIMESTAMP:
                 // seconds and increment are unsigned 32-bit values
                 return document(
