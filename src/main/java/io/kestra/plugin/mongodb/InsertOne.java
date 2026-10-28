@@ -105,7 +105,7 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
             BsonDocument bsonDocument = MongoDbService.toDocument(runContext, this.document);
             InsertOneResult insertOneResult = collection.insertOne(MongoDbService.withId(bsonDocument));
 
-            logger.info("Insert doc: {}", bsonDocument);
+            logger.debug("Insert doc: {}", bsonDocument);
 
             runContext.metric(
                 Counter.of(
