@@ -54,7 +54,7 @@ import static io.kestra.core.utils.Rethrow.throwFunction;
         Offset-aware and zoned date-times are stored as BSON dates representing the same UTC instant, without retaining the original offset or timezone.
         BigInteger values are stored as Decimal128 when exactly representable; otherwise, the task fails with the record number and field path.
         When a write fails, the task fails with the number of the failing record, and its outputs count the records applied before it, which stay in the collection.
-        A retry reads the whole file again: without `idKey`, the records already written are inserted a second time; with `idKey`, the retry fails on the first of them with a duplicate key error.
+        A retry reads the whole file again: without `idKey`, the records already written are inserted a second time; with `idKey`, records with a present `idKey` fail on retry with a duplicate key error (records where `idKey` is missing or null receive a generated ObjectId and are inserted again).
         """
 )
 @Plugin(
@@ -102,14 +102,15 @@ public class Load extends AbstractLoad {
 
     @Schema(
         title = "Field used as _id",
-        description = "If set, value (a 24-character hex string or an `$oid` wrapper) is converted to ObjectId and stored as _id."
+        description = """
+            If set, the value of this field is stored as `_id` (converted to an `ObjectId` if a 24-character hex string or an `$oid` wrapper, or stored directly as a custom primary key). If the field is missing or null, a new `ObjectId` is generated."""
     )
     @PluginProperty(group = "connection")
     private Property<String> idKey;
 
     @Schema(
         title = "Remove idKey field",
-        description = "When true (default), drops the source field after copying it to _id."
+        description = "When true (default), drops the source field after copying it to _id. Has no effect when `idKey` is `_id`."
     )
     @Builder.Default
     @PluginProperty(group = "connection")
@@ -124,33 +125,48 @@ public class Load extends AbstractLoad {
     @SuppressWarnings("unchecked")
     @Override
     protected Flux<WriteModel<Bson>> source(RunContext runContext, InputStream inputStream) throws Exception {
-        AtomicLong recordNumber = new AtomicLong();
+        var recordNumber = new AtomicLong();
+        var rIdKey = runContext.render(this.idKey).as(String.class);
+        var rRemoveIdKey = runContext.render(this.removeIdKey).as(Boolean.class).orElse(true);
+        var missingIdCount = new AtomicLong();
 
         return FileSerde.readAll(inputStream)
-            .map(throwFunction(o ->
+            .<WriteModel<Bson>>map(throwFunction(o ->
             {
-                Map<String, Object> values = (Map<String, Object>) o;
+                var values = (Map<String, Object>) o;
 
                 // decoded first so that an idKey given as an $oid wrapper is already an ObjectId
                 decodeExtendedJsonFields(values, recordNumber.incrementAndGet(), "");
 
-                if (runContext.render(this.idKey).as(String.class).isPresent()) {
-                    String idKey = runContext.render(this.idKey).as(String.class).get();
-                    Object id = values.get(idKey);
+                if (rIdKey.isPresent()) {
+                    var idKey = rIdKey.get();
+                    var id = values.get(idKey);
 
-                    values.put(
-                        "_id",
-                        id instanceof BsonObjectId bsonObjectId ? bsonObjectId : new BsonObjectId(new ObjectId(id.toString()))
-                    );
+                    if (id != null) {
+                        var idValue = id instanceof String str && ObjectId.isValid(str) ? new BsonObjectId(new ObjectId(str)) : id;
+                        values.put("_id", idValue);
+                    } else {
+                        missingIdCount.incrementAndGet();
+                    }
 
-                    if (runContext.render(this.removeIdKey).as(Boolean.class).orElseThrow()) {
+                    // with idKey _id, the source field is the _id just set, so it is kept
+                    if (!idKey.equals("_id") && rRemoveIdKey) {
                         values.remove(idKey);
                     }
                 }
 
                 // ordinary maps and values go straight into a Document, only Extended JSON wrappers were decoded above
-                return new InsertOneModel<>(new Document(MongoDbService.withId(values)));
-            }));
+                return new InsertOneModel<Bson>(new Document(MongoDbService.withId(values)));
+            }))
+            .doOnComplete(() -> {
+                if (missingIdCount.get() > 0 && rIdKey.isPresent()) {
+                    runContext.logger().warn(
+                        "Found {} record(s) with missing or null '{}', generated an ObjectId for each.",
+                        missingIdCount.get(),
+                        rIdKey.get()
+                    );
+                }
+            });
     }
 
     private static void decodeExtendedJsonFields(Map<String, Object> document, long record, String path) throws JsonProcessingException {

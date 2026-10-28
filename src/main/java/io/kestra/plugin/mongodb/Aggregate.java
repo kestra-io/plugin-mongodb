@@ -126,7 +126,8 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
     @Schema(
         title = "Aggregation pipeline",
         description = """
-            List of stages as a BSON string or a map list, rendered before execution.
+            List of stages as a BSON string or a map list, rendered once before execution.
+            Values that come from data (inputs, outputs, documents) are kept as literal text and are not evaluated again as expressions.
             A null inside a map stage is dropped when the flow is parsed.
             Pass the pipeline as a JSON string when a stage needs a null, for example `[{"$match": {"k": null}}]`.
             """
@@ -160,7 +161,7 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
 
     @Schema(
         title = "Result handling",
-        description = "Fetch returns rows in output; STORE writes an Ion file to internal storage. Defaults to FETCH."
+        description = "FETCH returns all rows in `rows`, FETCH_ONE a single row in `row`, NONE only the `size`, STORE writes an Ion file to internal storage. Defaults to FETCH."
     )
     @Builder.Default
     @PluginProperty(group = "destination")
@@ -186,13 +187,13 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
     public Aggregate.Output run(RunContext runContext) throws Exception {
         Logger logger = runContext.logger();
 
-        try (MongoClient client = this.connection.client(runContext)) {
+        try (MongoClient client = this.client(runContext)) {
             MongoCollection<BsonDocument> collection = this.collection(runContext, client, BsonDocument.class);
 
             List<Bson> pipelineStages = new ArrayList<>();
             if (this.pipeline != null) {
                 for (var stage : this.renderedStages(runContext)) {
-                    BsonDocument bsonStage = MongoDbService.toDocument(runContext, stage);
+                    var bsonStage = MongoDbService.toDocument(stage);
                     pipelineStages.add(bsonStage);
                     logger.debug("Pipeline stage: {}", bsonStage);
                 }
@@ -200,10 +201,10 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
 
             AggregateIterable<BsonDocument> aggregate = collection.aggregate(pipelineStages);
 
+            // send both true and false: the server defaults allowDiskUseByDefault to true since 8.0, so a false
+            // must reach it for the in-memory limit to be enforced
             Boolean allowDisk = runContext.render(this.allowDiskUse).as(Boolean.class).orElse(true);
-            if (allowDisk) {
-                aggregate.allowDiskUse(true);
-            }
+            aggregate.allowDiskUse(allowDisk);
 
             Integer maxTime = runContext.render(this.maxTimeMs).as(Integer.class).orElse(60000);
             if (maxTime > 0) {
@@ -225,6 +226,13 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
                         .size(fetch.getRight());
                     break;
 
+                case FETCH_ONE:
+                    Object row = this.fetchOne(aggregate);
+                    outputBuilder
+                        .row(row)
+                        .size(row == null ? 0L : 1L);
+                    break;
+
                 case STORE:
                     Pair<URI, Long> store = this.store(runContext, aggregate);
                     outputBuilder
@@ -232,12 +240,9 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
                         .size(store.getRight());
                     break;
 
-                default:
-                    // FETCH_ONE and NONE not implemented for aggregation
-                    Pair<List<Object>, Long> defaultFetch = this.fetch(aggregate);
-                    outputBuilder
-                        .rows(defaultFetch.getLeft())
-                        .size(defaultFetch.getRight());
+                case NONE:
+                    // run the pipeline but return only the number of documents it produced
+                    outputBuilder.size(this.count(aggregate));
                     break;
             }
 
@@ -286,6 +291,17 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
         );
     }
 
+    private Object fetchOne(AggregateIterable<BsonDocument> documents) {
+        var first = documents.first();
+        return first == null ? null : MongoDbService.map(first.toBsonDocument());
+    }
+
+    private long count(AggregateIterable<BsonDocument> documents) {
+        AtomicLong count = new AtomicLong();
+        documents.forEach(document -> count.incrementAndGet());
+        return count.get();
+    }
+
     @Builder
     @Getter
     public static class Output implements io.kestra.core.models.tasks.Output {
@@ -294,6 +310,12 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
             description = "Present when result handling is FETCH."
         )
         private List<Object> rows;
+
+        @Schema(
+            title = "A single aggregation row",
+            description = "Present when result handling is FETCH_ONE."
+        )
+        private Object row;
 
         @Schema(
             title = "Documents returned"

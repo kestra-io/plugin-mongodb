@@ -211,6 +211,11 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     @ToString.Exclude
     private transient volatile MongoCursor<BsonDocument> cursor;
 
+    @Getter(AccessLevel.NONE)
+    @EqualsAndHashCode.Exclude
+    @ToString.Exclude
+    private transient volatile MongoDbSessionKiller sessionKiller;
+
     @Override
     public Optional<Execution> evaluate(ConditionContext conditionContext, TriggerContext context) throws Exception {
         RunContext runContext = conditionContext.getRunContext();
@@ -232,7 +237,9 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
         var watermark = this.watermark(runContext, context);
 
-        MongoClient mongoClient = this.connection.client(runContext);
+        MongoDbSessionKiller mongoSessionKiller = new MongoDbSessionKiller(this.connection.clientSettings(runContext));
+        MongoClient mongoClient = this.connection.client(runContext, mongoSessionKiller);
+        this.sessionKiller = mongoSessionKiller;
         this.client = mongoClient;
         try (mongoClient) {
             Find.Output output = find.run(runContext, mongoClient, mongoCursor -> this.cursor = mongoCursor, watermark != null ? watermark : Find.QueryHook.NONE);
@@ -254,6 +261,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         } finally {
             this.cursor = null;
             this.client = null;
+            this.sessionKiller = null;
         }
     }
 
@@ -278,31 +286,39 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
      * Best-effort cancellation of an in-flight evaluation, without blocking the calling worker thread.
      *
      * <p>
-     * Closing the cursor requests driver teardown of the cursor and closing the client releases its
-     * resources, but neither is guaranteed to interrupt a genuinely wedged server or network read: an
-     * already in-flight getMore() may continue until it returns, with teardown completing afterwards,
-     * and a connection currently checked out and blocked may not be reclaimed immediately.
+     * Closing the cursor and the client alone does not interrupt an in-flight find() or getMore(): the server
+     * keeps running it and the read only returns once it is done. After closing them, the client's server
+     * sessions are therefore killed, which makes the server interrupt that operation and close the cursor, so
+     * the evaluation fails promptly. A genuinely wedged server or network read is still not interrupted. See
+     * {@link MongoDbSessionKiller} for when killing the sessions is not possible.
      *
      * <p>
-     * The closes run on a dedicated daemon thread because closing may itself perform a synchronous
-     * teardown round trip while this plugin configures no client-side timeout bound. This method therefore
-     * always returns promptly and never throws.
+     * This work runs on a dedicated daemon thread because closing and killing are synchronous round trips
+     * while this plugin configures no client-side timeout bound. This method therefore always returns
+     * promptly and never throws.
      *
      * <p>
-     * Each kill() invocation spawns one daemon thread and there is currently no cap or deduplication:
-     * a genuinely wedged server with no socket timeout may hold that daemon thread indefinitely.
-     * Because the thread is a daemon, it never keeps JVM shutdown alive.
+     * Each kill() invocation spawns one daemon thread, but only the first one per evaluation sends
+     * {@code killSessions}: a genuinely wedged server with no socket timeout may hold that daemon thread
+     * indefinitely. Because the thread is a daemon, it never keeps JVM shutdown alive.
      */
     @Override
     public void kill() {
         MongoCursor<BsonDocument> mongoCursor = this.cursor;
         MongoClient mongoClient = this.client;
+        MongoDbSessionKiller mongoSessionKiller = this.sessionKiller;
         if (mongoCursor == null && mongoClient == null) {
             return;
         }
 
         Thread killThread = new Thread(
-            () -> closeQuietly(mongoCursor, mongoClient),
+            () ->
+            {
+                closeQuietly(mongoCursor, mongoClient);
+                if (mongoSessionKiller != null) {
+                    mongoSessionKiller.killSessions();
+                }
+            },
             "kestra-mongodb-trigger-kill"
         );
         killThread.setDaemon(true);

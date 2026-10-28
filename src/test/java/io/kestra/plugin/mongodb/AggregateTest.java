@@ -3,22 +3,31 @@ package io.kestra.plugin.mongodb;
 import java.io.BufferedInputStream;
 import java.util.*;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 
+import org.bson.BsonDocument;
 import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.google.common.collect.ImmutableMap;
+import com.mongodb.MongoClientSettings;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.event.CommandListener;
+import com.mongodb.event.CommandStartedEvent;
 
+import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.common.FetchType;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.FileSerde;
+
+import lombok.NoArgsConstructor;
+import lombok.experimental.SuperBuilder;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
@@ -83,6 +92,45 @@ class AggregateTest extends MongoDbContainer {
                 )
             );
         }
+    }
+
+    @Test
+    void doesNotEvaluateExpressionsFoundInData() throws Exception {
+        insertLiteralLabel();
+        var runContext = runContextFactory.of(Map.of("payload", "{{ 6 * 7 }}"));
+
+        var output = literalLabelAggregate(
+            Property.ofValue(List.of(Map.of("$match", Map.of("label", "{{ payload }}"))))
+        ).run(runContext);
+
+        assertThat(output.getSize(), is(1L));
+    }
+
+    @Test
+    void doesNotEvaluateExpressionsFoundInDataWithExpressionPipeline() throws Exception {
+        insertLiteralLabel();
+        var runContext = runContextFactory.of(Map.of("stages", "[{\"$match\": {\"label\": \"{{ 6 * 7 }}\"}}]"));
+
+        var output = literalLabelAggregate(Property.ofExpression("{{ stages }}")).run(runContext);
+
+        assertThat(output.getSize(), is(1L));
+    }
+
+    private void insertLiteralLabel() {
+        try (MongoClient client = MongoClients.create(connectionUri)) {
+            var collection = client.getDatabase(DATABASE_NAME).getCollection("literal_label");
+            collection.drop();
+            collection.insertOne(new Document("_id", 1).append("label", "{{ 6 * 7 }}"));
+        }
+    }
+
+    private Aggregate literalLabelAggregate(Property<List<Map<String, Object>>> pipeline) {
+        return Aggregate.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
+            .database(Property.ofValue(DATABASE_NAME))
+            .collection(Property.ofValue("literal_label"))
+            .pipeline(pipeline)
+            .build();
     }
 
     @SuppressWarnings("unchecked")
@@ -406,6 +454,70 @@ class AggregateTest extends MongoDbContainer {
 
     @SuppressWarnings("unchecked")
     @Test
+    void fetchOneReturnsASingleRow() throws Exception {
+        var output = Aggregate.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
+            .database(Property.ofValue(DATABASE_NAME))
+            .collection(Property.ofValue(COLLECTION_NAME))
+            .pipeline(Property.ofValue(List.of(Map.of("$sort", Map.of("_id", 1)))))
+            .store(Property.ofValue(FetchType.FETCH_ONE))
+            .build()
+            .run(runContextFactory.of());
+
+        assertThat(output.getSize(), is(1L));
+        assertThat(output.getRows(), is(nullValue()));
+        assertThat(output.getRow(), instanceOf(Map.class));
+        assertThat(((Map<String, Object>) output.getRow()).get("_id"), is(1));
+    }
+
+    @Test
+    void noneReturnsOnlyTheSize() throws Exception {
+        var output = Aggregate.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
+            .database(Property.ofValue(DATABASE_NAME))
+            .collection(Property.ofValue(COLLECTION_NAME))
+            .pipeline(Property.ofValue(List.of(Map.of("$match", Map.of("status", "available")))))
+            .store(Property.ofValue(FetchType.NONE))
+            .build()
+            .run(runContextFactory.of());
+
+        assertThat(output.getSize(), is(4L));
+        assertThat(output.getRows(), is(nullValue()));
+        assertThat(output.getRow(), is(nullValue()));
+    }
+
+    @Test
+    void allowDiskUseFalseIsSentToTheServer() throws Exception {
+        assertThat("allowDiskUse was sent as", sentAllowDiskUse(false), is(false));
+    }
+
+    @Test
+    void allowDiskUseTrueIsSentToTheServer() throws Exception {
+        assertThat("allowDiskUse was sent as", sentAllowDiskUse(true), is(true));
+    }
+
+    // runs an aggregate with the given allowDiskUse and returns the value the driver actually put on the wire
+    private boolean sentAllowDiskUse(boolean allowDiskUse) throws Exception {
+        CapturingConnection.aggregateCommands.clear();
+        Aggregate.builder()
+            .connection(CapturingConnection.builder().uri(Property.ofValue(connectionUri)).build())
+            .database(Property.ofValue(DATABASE_NAME))
+            .collection(Property.ofValue(COLLECTION_NAME))
+            .pipeline(Property.ofValue(List.of(Map.of("$sort", Map.of("price", 1)))))
+            .allowDiskUse(Property.ofValue(allowDiskUse))
+            .build()
+            .run(runContextFactory.of());
+
+        return CapturingConnection.aggregateCommands.stream()
+            .filter(command -> command.containsKey("allowDiskUse"))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no aggregate command carried allowDiskUse"))
+            .getBoolean("allowDiskUse")
+            .getValue();
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
     void testWithMaxTimeMs() throws Exception {
         RunContext runContext = runContextFactory.of(ImmutableMap.of());
 
@@ -432,5 +544,29 @@ class AggregateTest extends MongoDbContainer {
 
         assertThat(output.getSize(), is(4L));
         assertThat(output.getRows(), hasSize(4));
+    }
+
+    // a connection that records every aggregate command the driver sends, so a test can assert what reached the server
+    @SuperBuilder
+    @NoArgsConstructor
+    private static class CapturingConnection extends MongoDbConnection {
+        static final List<BsonDocument> aggregateCommands = new CopyOnWriteArrayList<>();
+
+        @Override
+        MongoClient client(RunContext runContext, CommandListener listener) throws IllegalVariableEvaluationException {
+            return MongoClients.create(
+                MongoClientSettings.builder(this.clientSettings(runContext))
+                    .addCommandListener(listener)
+                    .addCommandListener(new CommandListener() {
+                        @Override
+                        public void commandStarted(CommandStartedEvent event) {
+                            if ("aggregate".equals(event.getCommandName())) {
+                                aggregateCommands.add(event.getCommand().clone());
+                            }
+                        }
+                    })
+                    .build()
+            );
+        }
     }
 }

@@ -25,6 +25,7 @@ import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.FileSerde;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
@@ -46,11 +47,11 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
 
     @Schema(
         title = "Bulk chunk size",
-        description = "Number of write models sent per bulkWrite call; defaults to 1000."
+        description = "Number of write models sent per bulkWrite call; defaults to 1000. Must be at least 1."
     )
     @Builder.Default
     @PluginProperty(group = "execution")
-    private Property<Integer> chunk = Property.ofValue(1000);
+    private Property<@Min(1) Integer> chunk = Property.ofValue(1000);
 
     abstract protected Flux<WriteModel<Bson>> source(RunContext runContext, InputStream inputStream) throws Exception;
 
@@ -59,22 +60,27 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
         Logger logger = runContext.logger();
         URI from = new URI(runContext.render(this.from).as(String.class).orElseThrow());
 
+        // guards a null chunk; core validation rejects values below 1 on render
+        var rChunk = runContext.render(this.chunk).as(Integer.class).orElse(null);
+        if (rChunk == null || rChunk < 1) {
+            throw new IllegalArgumentException("Invalid `chunk` value (" + rChunk + "): chunk must be at least 1");
+        }
+
         try (
-            MongoClient client = this.connection.client(runContext);
+            MongoClient client = this.client(runContext);
             InputStream inputStream = new BufferedInputStream(runContext.storage().getFile(from), FileSerde.BUFFER_SIZE)
         ) {
             MongoCollection<Bson> collection = this.collection(runContext, client);
 
             AtomicLong count = new AtomicLong();
-            Progress progress = new Progress();
+            var progress = new Progress(collection.getWriteConcern().isAcknowledged());
 
-            var renderedChunk = runContext.render(this.chunk).as(Integer.class).orElse(null);
             Flux<BulkWriteResult> flowable = this.source(runContext, inputStream)
                 .doOnNext(docWriteRequest ->
                 {
                     count.incrementAndGet();
                 })
-                .buffer(renderedChunk, renderedChunk)
+                .buffer(rChunk, rChunk)
                 .map(indexRequests ->
                 {
                     List<WriteModel<Bson>> bulkOperations = new ArrayList<>(indexRequests);
@@ -127,11 +133,16 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
     private static class Progress {
         private long requests;
         private long applied;
+        private final boolean acknowledged;
         private int insertedCount;
         private int matchedCount;
         private int modifiedCount;
         private int deletedCount;
         private int upsertedCount;
+
+        Progress(boolean acknowledged) {
+            this.acknowledged = acknowledged;
+        }
 
         BulkWriteResult write(MongoCollection<Bson> collection, List<WriteModel<Bson>> chunk) {
             var records = range(this.applied + 1, this.applied + chunk.size());
@@ -172,6 +183,11 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
         }
 
         private void add(BulkWriteResult result) {
+            // a w=0 result throws on every getter, so its counts are skipped and the next chunks still run
+            if (!result.wasAcknowledged()) {
+                return;
+            }
+
             this.insertedCount += result.getInsertedCount();
             this.matchedCount += result.getMatchedCount();
             this.modifiedCount += result.getModifiedCount();
@@ -182,6 +198,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
         Output output(long size) {
             return Output.builder()
                 .size(size)
+                .wasAcknowledged(this.acknowledged)
                 .matchedCount(this.matchedCount)
                 .insertedCount(this.insertedCount)
                 .modifiedCount(this.modifiedCount)
@@ -216,36 +233,42 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
         private Long size;
 
         @Schema(
+            title = "Whether the writes were acknowledged",
+            description = "False with an unacknowledged write concern (`w=0`): the counts are then 0."
+        )
+        private Boolean wasAcknowledged;
+
+        @Schema(
             title = "Inserted documents",
-            description = "Count of documents created by bulk writes."
+            description = "Count of documents created by bulk writes. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int insertedCount = 0;
 
         @Schema(
             title = "Matched documents",
-            description = "Documents matched by update or replacement models."
+            description = "Documents matched by update or replacement models. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int matchedCount = 0;
 
         @Schema(
             title = "Deleted documents",
-            description = "Documents removed by bulk delete models."
+            description = "Documents removed by bulk delete models. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int deletedCount = 0;
 
         @Schema(
             title = "Modified documents",
-            description = "Documents updated by bulk operations."
+            description = "Documents updated by bulk operations. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int modifiedCount = 0;
 
         @Schema(
             title = "Upserted documents",
-            description = "Documents created by update or replacement models with `upsert: true` that matched no document. Only `Bulk` sends these models, so it's always 0 for `Load`."
+            description = "Documents created by update or replacement models with `upsert: true` that matched no document. Only `Bulk` sends these models, so it's always 0 for `Load`. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int upsertedCount = 0;
