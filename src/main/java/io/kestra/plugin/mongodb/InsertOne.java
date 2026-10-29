@@ -6,6 +6,7 @@ import org.bson.BsonDocument;
 import org.bson.conversions.Bson;
 import org.slf4j.Logger;
 
+import com.mongodb.MongoWriteConcernException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.result.InsertOneResult;
@@ -16,6 +17,7 @@ import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.models.tasks.RunnableTask;
+import io.kestra.core.models.tasks.RunnableTaskException;
 import io.kestra.core.runners.RunContext;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -103,7 +105,20 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
             MongoCollection<Bson> collection = this.collection(runContext, client);
 
             BsonDocument bsonDocument = MongoDbService.toDocument(runContext, this.document);
-            InsertOneResult insertOneResult = collection.insertOne(MongoDbService.withId(bsonDocument));
+            InsertOneResult insertOneResult;
+            try {
+                insertOneResult = collection.insertOne(MongoDbService.withId(bsonDocument));
+            } catch (MongoWriteConcernException e) {
+                // applied on the primary, only the write concern failed; keep the id so the task does not fail empty (see AbstractLoad)
+                throw new RunnableTaskException(
+                    MongoDbService.writeConcernErrorMessage(e),
+                    e,
+                    Output.builder()
+                        .insertedId(MongoDbService.toIdString(bsonDocument.get("_id")))
+                        .wasAcknowledged(true)
+                        .build()
+                );
+            }
 
             logger.debug("Insert doc: {}", bsonDocument);
 
