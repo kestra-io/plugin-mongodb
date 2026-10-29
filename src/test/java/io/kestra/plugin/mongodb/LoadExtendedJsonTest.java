@@ -7,9 +7,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.bson.BsonBinary;
 import org.bson.BsonDocument;
 import org.bson.BsonType;
 import org.bson.Document;
+import org.bson.UuidRepresentation;
 import org.bson.json.JsonParseException;
 import org.junit.jupiter.api.Test;
 
@@ -115,6 +117,25 @@ class LoadExtendedJsonTest {
         assertThat(encoded.getRegularExpression("pattern").getOptions(), is("i"));
         assertThat(encoded.get("legacyPattern").getBsonType(), is(BsonType.REGULAR_EXPRESSION));
         assertThat(encoded.getBinary("uuid").asUuid(), is(UUID.fromString("123e4567-e89b-12d3-a456-426614174000")));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldKeepBinarySubtypeWhenMappedDocumentIsReloaded() throws Exception {
+        var uuid = UUID.fromString("3b241101-e2bb-4255-8caf-4136c566a962");
+        var original = new BsonDocument()
+            .append("generic", new BsonBinary(new byte[] { 1, 2, 3 }))
+            .append("uuid", new BsonBinary(uuid, UuidRepresentation.STANDARD))
+            .append("legacyUuid", new BsonBinary(uuid, UuidRepresentation.JAVA_LEGACY))
+            .append("userDefined", new BsonBinary((byte) 0x80, new byte[] { 4, 5 }));
+
+        var mapped = (Map<String, Object>) MongoDbService.map(original);
+        var encoded = encode(mapped);
+
+        assertThat(mapped.get("generic"), is(new byte[] { 1, 2, 3 }));
+        for (var field : original.keySet()) {
+            assertThat(field, encoded.get(field), is(original.get(field)));
+        }
     }
 
     @Test

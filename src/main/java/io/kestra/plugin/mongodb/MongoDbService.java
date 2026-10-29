@@ -109,14 +109,6 @@ public abstract class MongoDbService {
 
             case STRING:
                 return doc.asString().getValue();
-            case BINARY: {
-                var binary = doc.asBinary();
-                // keep the subtype so Load writes it back as the same Binary; a bare byte array would reload as subtype 0 (#189)
-                if (binary.getType() == BsonBinarySubType.UUID_STANDARD.getValue() && binary.getData().length == 16) {
-                    return document("$uuid", binary.asUuid().toString());
-                }
-                return document("$binary", document("base64", Base64.getEncoder().encodeToString(binary.getData()), "subType", String.format("%02x", binary.getType() & 0xFF)));
-            }
 
             case BOOLEAN:
                 return doc.asBoolean().getValue();
@@ -153,6 +145,22 @@ public abstract class MongoDbService {
                 return null;
 
             // no JSON equivalent: MongoDB Extended JSON, which Load writes back as the same BSON type
+            case BINARY: {
+                var binary = doc.asBinary();
+                if (binary.getType() == BsonBinarySubType.BINARY.getValue()) {
+                    return binary.getData();
+                }
+                if (binary.getType() == BsonBinarySubType.UUID_STANDARD.getValue() && binary.getData().length == 16) {
+                    return document("$uuid", binary.asUuid().toString());
+                }
+                return document(
+                    "$binary",
+                    document(
+                        "base64", Base64.getEncoder().encodeToString(binary.getData()),
+                        "subType", "%02x".formatted(binary.getType() & 0xFF)
+                    )
+                );
+            }
             case TIMESTAMP:
                 // seconds and increment are unsigned 32-bit values
                 return document(
