@@ -183,7 +183,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
     @Schema(
         title = "Store results",
-        description = "When true, writes results as Ion to internal storage; otherwise rows are kept in output. Defaults to false."
+        description = "When true, writes the results as Ion to internal storage and passes their URI to the execution. When false, the default, passes every document in `rows`, which is held in memory and saved in the execution, so keep it for small results: Kestra 2.0 limits a trigger result to 1 MiB by default, and the trigger logs a warning above that size."
     )
     @Builder.Default
     @PluginProperty(group = "advanced")

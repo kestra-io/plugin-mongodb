@@ -39,7 +39,7 @@ import reactor.core.publisher.Flux;
 @NoArgsConstructor
 @Schema(
     title = "Query documents from MongoDB",
-    description = "Executes find on a collection with optional projection, sort, skip, and limit. Filter/projection/sort accept BSON strings or maps rendered from Flow variables. Results are fetched in-memory by default or stored as Ion in internal storage when `store` is true."
+    description = "Executes find on a collection with optional projection, sort, skip, and limit. Filter/projection/sort accept BSON strings or maps rendered from Flow variables. Results are fetched in-memory into the outputs by default; set `store` to true for large results, which writes them as Ion to internal storage."
 )
 @Plugin(
     examples = {
@@ -141,7 +141,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
 
     @Schema(
         title = "Store results",
-        description = "When true, writes results as Ion to internal storage; otherwise returns rows. Defaults to false."
+        description = "When true, writes the results as Ion to internal storage and returns their URI. When false, the default, returns every document in `rows`, which is held in memory and saved in the execution, so keep it for small results: Kestra 2.0 rejects task outputs larger than 1 MiB by default, and the task logs a warning above that size."
     )
     @Builder.Default
     @PluginProperty(group = "destination")
@@ -205,7 +205,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
                 .uri(store.getLeft())
                 .size(store.getRight());
         } else {
-            Pair<ArrayList<Object>, Long> fetch = this.fetch(find, cursorListener, queryHook);
+            Pair<ArrayList<Object>, Long> fetch = this.fetch(find, cursorListener, queryHook, logger);
 
             builder
                 .rows(fetch.getLeft())
@@ -249,9 +249,10 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         }
     }
 
-    private Pair<ArrayList<Object>, Long> fetch(FindIterable<BsonDocument> documents, Consumer<MongoCursor<BsonDocument>> cursorListener, QueryHook queryHook) {
+    private Pair<ArrayList<Object>, Long> fetch(FindIterable<BsonDocument> documents, Consumer<MongoCursor<BsonDocument>> cursorListener, QueryHook queryHook, Logger logger) {
         ArrayList<Object> result = new ArrayList<>();
         AtomicLong count = new AtomicLong();
+        var outputsSize = new OutputsSize();
 
         try (MongoCursor<BsonDocument> mongoCursor = documents.cursor()) {
             cursorListener.accept(mongoCursor);
@@ -259,9 +260,12 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
                 BsonDocument bsonDocument = mongoCursor.next();
                 queryHook.document(bsonDocument);
                 count.incrementAndGet();
+                outputsSize.add(bsonDocument);
                 result.add(MongoDbService.map(bsonDocument.toBsonDocument()));
             }
         }
+
+        outputsSize.warnIfLarge(logger, count.get(), "store: true");
 
         return Pair.of(
             result,
