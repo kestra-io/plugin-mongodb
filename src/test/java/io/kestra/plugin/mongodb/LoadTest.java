@@ -15,6 +15,7 @@ import org.bson.BsonDocument;
 import org.bson.BsonType;
 import org.bson.Document;
 import org.bson.types.ObjectId;
+import com.mongodb.client.model.Sorts;
 import org.junit.jupiter.api.Test;
 
 import com.google.common.collect.ImmutableMap;
@@ -295,6 +296,34 @@ class LoadTest extends MongoDbContainer {
         assertThat(metric(runContext, "records"), is(5D));
         assertThat(metric(runContext, "requests.count"), is(2D));
         assertThat(count(database, "validated"), is(5L));
+    }
+
+    @Test
+    void runWithCustomStringNumericAndMissingIdKey() throws Exception {
+        var database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        var uri = put(
+            List.of(
+                Map.of("id", "custom-123", "name", "first"),
+                Map.of("id", 42, "name", "second"),
+                Map.of("name", "third")
+            )
+        );
+
+        var output = load(database, "custom_ids", uri)
+            .idKey(Property.ofValue("id"))
+            .build()
+            .run(runContextFactory.of());
+
+        assertThat(output.getInsertedCount(), is(3));
+        try (var client = getMongoClient()) {
+            var stored = client.getDatabase(database).getCollection("custom_ids", BsonDocument.class).find().sort(Sorts.ascending("name")).into(new ArrayList<>());
+            assertThat(stored.size(), is(3));
+            assertThat(stored.getFirst().get("_id").getBsonType(), is(BsonType.STRING));
+            assertThat(stored.getFirst().getString("_id").getValue(), is("custom-123"));
+            assertThat(stored.get(1).get("_id").getBsonType(), is(BsonType.INT32));
+            assertThat(stored.get(1).getInt32("_id").getValue(), is(42));
+            assertThat(stored.get(2).get("_id").getBsonType(), is(BsonType.OBJECT_ID));
+        }
     }
 
     @Test

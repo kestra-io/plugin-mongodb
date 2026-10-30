@@ -11,6 +11,7 @@ import java.util.stream.Collectors;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mongodb.MongoWriteConcernException;
 import org.bson.BsonBinarySubType;
 import org.bson.BsonDocument;
 import org.bson.BsonObjectId;
@@ -46,7 +47,7 @@ public abstract class MongoDbService {
 
     // add the _id before the driver does: with MongoCollection<Bson> it fails when the last field name written is a nested _id
     public static <T extends Map<String, ? super BsonObjectId>> T withId(T document) {
-        if (!document.containsKey("_id")) {
+        if (document.get("_id") == null) {
             document.put("_id", new BsonObjectId());
         }
 
@@ -56,6 +57,12 @@ public abstract class MongoDbService {
     static List<Map<String, Object>> readMapList(String json) throws IOException {
         return JSON_WITH_NULL_MAP_ENTRIES.readValue(json, new TypeReference<>() {
         });
+    }
+
+    // the write was applied on the primary but the requested write concern was not met; this is not always a
+    // timeout, e.g. "Not enough data-bearing nodes" on a single-member replica set, so the wording stays neutral
+    static String writeConcernErrorMessage(MongoWriteConcernException e) {
+        return "MongoDB reported a write concern error; the write was applied on the primary but may not be durable: " + e.getMessage();
     }
 
     public static String toIdString(BsonValue id) {
