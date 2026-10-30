@@ -54,7 +54,7 @@ import static io.kestra.core.utils.Rethrow.throwFunction;
         Offset-aware and zoned date-times are stored as BSON dates representing the same UTC instant, without retaining the original offset or timezone.
         BigInteger values are stored as Decimal128 when exactly representable; otherwise, the task fails with the record number and field path.
         When a write fails, the task fails with the number of the failing record, and its outputs count the records applied before it, which stay in the collection.
-        A retry reads the whole file again: without `idKey`, the records already written are inserted a second time; with `idKey`, records with a present `idKey` fail on retry with a duplicate key error (records where `idKey` is missing or null receive a generated ObjectId and are inserted again).
+        A retry reads the whole file again: records with an `_id`, whether carried by the record or derived via `idKey`, fail on retry with a duplicate key error and are not inserted twice; records without an `_id` receive a generated ObjectId and are inserted again.
         """
 )
 @Plugin(
@@ -103,7 +103,7 @@ public class Load extends AbstractLoad {
     @Schema(
         title = "Field used as _id",
         description = """
-            If set, the value of this field is stored as `_id` (converted to an `ObjectId` if a 24-character hex string or an `$oid` wrapper, or stored directly as a custom primary key). If the field is missing or null, a new `ObjectId` is generated."""
+            If set, the value of this field is stored as `_id` (converted to an `ObjectId` if a 24-character hex string or an `$oid` wrapper, or stored directly as a custom primary key). If the field is missing or null, the record keeps its existing `_id` or receives a generated `ObjectId` if it has none."""
     )
     @PluginProperty(group = "connection")
     private Property<String> idKey;
@@ -131,7 +131,7 @@ public class Load extends AbstractLoad {
         var missingIdCount = new AtomicLong();
 
         return FileSerde.readAll(inputStream)
-            .<WriteModel<Bson>>map(throwFunction(o ->
+            .<WriteModel<Bson>> map(throwFunction(o ->
             {
                 var values = (Map<String, Object>) o;
 
@@ -145,7 +145,7 @@ public class Load extends AbstractLoad {
                     if (id != null) {
                         var idValue = id instanceof String str && ObjectId.isValid(str) ? new BsonObjectId(new ObjectId(str)) : id;
                         values.put("_id", idValue);
-                    } else {
+                    } else if (values.get("_id") == null) {
                         missingIdCount.incrementAndGet();
                     }
 
@@ -158,7 +158,8 @@ public class Load extends AbstractLoad {
                 // ordinary maps and values go straight into a Document, only Extended JSON wrappers were decoded above
                 return new InsertOneModel<Bson>(new Document(MongoDbService.withId(values)));
             }))
-            .doOnComplete(() -> {
+            .doOnComplete(() ->
+            {
                 if (missingIdCount.get() > 0 && rIdKey.isPresent()) {
                     runContext.logger().warn(
                         "Found {} record(s) with missing or null '{}', generated an ObjectId for each.",

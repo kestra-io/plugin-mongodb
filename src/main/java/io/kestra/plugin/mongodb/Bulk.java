@@ -42,7 +42,7 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 @NoArgsConstructor
 @Schema(
     title = "Run MongoDB bulkWrite from NDJSON",
-    description = "Reads newline-delimited bulk operations from internal storage and executes MongoDB bulkWrite. Supports insertOne, updateOne, updateMany, replaceOne, deleteOne and deleteMany in the db.collection.bulkWrite() format (https://www.mongodb.com/docs/manual/reference/method/db.collection.bulkWrite/). insertOne also accepts the legacy flat form where the body is the document itself; a body whose only field is an object named `document` is read as the bulkWrite form. Blank and whitespace-only lines are skipped. Delete, update and replace operations support `collation` and `hint`. Inherits chunking from AbstractLoad (default 1000 per bulk request). The file must be UTF-8: a line that isn't valid UTF-8 fails the task with its line number. When an operation fails, the task fails with its record number (counting emitted operations, not file lines); when a line can't be read, with its line number. Either way, its outputs count the operations applied before it, which are kept. A retry runs every line again, so it is only safe for operations that change nothing more when repeated, such as `replaceOne`, or `updateOne` with `$set`, using `upsert: true`: an `insertOne` is inserted again, or fails with a duplicate key error if it sets `_id`, `$inc` or `$push` updates are applied twice, and a `deleteOne` whose filter matches several documents deletes another one."
+    description = "Reads newline-delimited bulk operations from internal storage and executes MongoDB bulkWrite. Supports insertOne, updateOne, updateMany, replaceOne, deleteOne and deleteMany in the db.collection.bulkWrite() format (https://www.mongodb.com/docs/manual/reference/method/db.collection.bulkWrite/). insertOne also accepts the legacy flat form where the body is the document itself; a body whose only field is an object named `document` is read as the bulkWrite form. Blank and whitespace-only lines are skipped. Delete, update and replace operations support `collation` and `hint`. Inherits chunking from AbstractLoad (default 1000 per bulk request). The file must be UTF-8: a line that isn't valid UTF-8 fails the task with its line number. When an operation fails, the task fails with its record number (counting emitted operations, not file lines); when a line can't be read, with its line number. Either way, its outputs count the operations applied before it, which are kept. A retry runs every line again, so it is only safe for operations that change nothing more when repeated, such as `replaceOne`, or `updateOne` with `$set`, using `upsert: true` as long as the filter still matches the document after the modification (such as filtering directly on `_id`): an `insertOne` is inserted again, or fails with a duplicate key error if it sets `_id`, `$inc` or `$push` updates are applied twice, and a `deleteOne` whose filter matches several documents deletes another one."
 )
 @Plugin(
     examples = {
@@ -156,25 +156,31 @@ public class Bulk extends AbstractLoad {
                         );
                         case "replaceOne" -> {
                             validateKeys("replaceOne", body, REPLACE_KEYS);
+                            var replacement = requireDocument("replaceOne", body, "replacement");
+                            validateReplacement(replacement);
                             yield new ReplaceOneModel<>(
                                 requireDocument("replaceOne", body, "filter"),
-                                requireDocument("replaceOne", body, "replacement"),
+                                replacement,
                                 getReplaceOptions(body)
                             );
                         }
                         case "updateOne" -> {
                             validateKeys("updateOne", body, UPDATE_KEYS);
+                            var update = requireDocument("updateOne", body, "update");
+                            validateUpdate(update);
                             yield new UpdateOneModel<>(
                                 requireDocument("updateOne", body, "filter"),
-                                requireDocument("updateOne", body, "update"),
+                                update,
                                 getUpdateOptions(body)
                             );
                         }
                         case "updateMany" -> {
                             validateKeys("updateMany", body, UPDATE_KEYS);
+                            var update = requireDocument("updateMany", body, "update");
+                            validateUpdate(update);
                             yield new UpdateManyModel<>(
                                 requireDocument("updateMany", body, "filter"),
-                                requireDocument("updateMany", body, "update"),
+                                update,
                                 getUpdateOptions(body)
                             );
                         }
@@ -208,10 +214,36 @@ public class Bulk extends AbstractLoad {
         });
     }
 
+    private static final Set<String> REPLACEMENT_EXCEPTIONS = Set.of("$db", "$ref", "$id");
+
     private static void validateKeys(String op, BsonDocument body, Set<String> allowed) {
         for (var key : body.keySet()) {
             if (!allowed.contains(key)) {
                 throw new IllegalArgumentException(op + " does not support key '" + key + "'");
+            }
+        }
+    }
+
+    private static void validateUpdate(BsonDocument update) {
+        if (update.isEmpty()) {
+            throw new IllegalArgumentException("Invalid BSON document for an update. The document may not be empty.");
+        }
+
+        for (var key : update.keySet()) {
+            if (!key.startsWith("$")) {
+                throw new IllegalArgumentException(
+                    "All update operators must start with '$', but '" + key + "' does not"
+                );
+            }
+        }
+    }
+
+    private static void validateReplacement(BsonDocument replacement) {
+        for (var key : replacement.keySet()) {
+            if (key.startsWith("$") && !REPLACEMENT_EXCEPTIONS.contains(key)) {
+                throw new IllegalArgumentException(
+                    "Field names in a replacement document can not start with '$' but '" + key + "' does"
+                );
             }
         }
     }

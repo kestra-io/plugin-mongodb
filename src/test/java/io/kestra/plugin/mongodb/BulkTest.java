@@ -398,13 +398,17 @@ class BulkTest extends MongoDbContainer {
             .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
             .database(Property.ofValue(database))
             .collection(Property.ofValue("failing"))
-            .from(Property.ofValue(store(
-                "{\"updateOne\": {\"filter\": {\"_id\": 1}, \"update\": {\"$set\": {\"a\": 1}}, \"upsert\": true}}",
-                "{\"updateOne\": {\"filter\": {\"_id\": 2}, \"update\": {\"$set\": {\"a\": 2}}, \"upsert\": true}}",
-                "{\"insertOne\": {\"document\": {\"_id\": 3}}}",
-                "{\"insertOne\": {\"document\": {\"_id\": 1}}}",
-                "{\"insertOne\": {\"document\": {\"_id\": 5}}}"
-            ).toString()))
+            .from(
+                Property.ofValue(
+                    store(
+                        "{\"updateOne\": {\"filter\": {\"_id\": 1}, \"update\": {\"$set\": {\"a\": 1}}, \"upsert\": true}}",
+                        "{\"updateOne\": {\"filter\": {\"_id\": 2}, \"update\": {\"$set\": {\"a\": 2}}, \"upsert\": true}}",
+                        "{\"insertOne\": {\"document\": {\"_id\": 3}}}",
+                        "{\"insertOne\": {\"document\": {\"_id\": 1}}}",
+                        "{\"insertOne\": {\"document\": {\"_id\": 5}}}"
+                    ).toString()
+                )
+            )
             .chunk(Property.ofValue(2))
             .build();
 
@@ -429,13 +433,17 @@ class BulkTest extends MongoDbContainer {
             .connection(SecondWriteFailsConnection.builder().uri(Property.ofValue(connectionUri)).build())
             .database(Property.ofValue(database))
             .collection(Property.ofValue("unknown"))
-            .from(Property.ofValue(store(
-                "{\"insertOne\": {\"document\": {\"_id\": 1}}}",
-                "{\"insertOne\": {\"document\": {\"_id\": 2}}}",
-                "{\"insertOne\": {\"document\": {\"_id\": 3}}}",
-                "{\"insertOne\": {\"document\": {\"_id\": 4}}}",
-                "{\"insertOne\": {\"document\": {\"_id\": 5}}}"
-            ).toString()))
+            .from(
+                Property.ofValue(
+                    store(
+                        "{\"insertOne\": {\"document\": {\"_id\": 1}}}",
+                        "{\"insertOne\": {\"document\": {\"_id\": 2}}}",
+                        "{\"insertOne\": {\"document\": {\"_id\": 3}}}",
+                        "{\"insertOne\": {\"document\": {\"_id\": 4}}}",
+                        "{\"insertOne\": {\"document\": {\"_id\": 5}}}"
+                    ).toString()
+                )
+            )
             .chunk(Property.ofValue(2))
             .build();
 
@@ -462,33 +470,35 @@ class BulkTest extends MongoDbContainer {
         }
 
         // proxies the client, and the databases and collections it returns, down to bulkWrite
-        @SuppressWarnings({"unchecked", "rawtypes"})
+        @SuppressWarnings({ "unchecked", "rawtypes" })
         private static <T> T failSecondWrite(T target, Class<T> type, AtomicInteger writes) {
-            return type.cast(Proxy.newProxyInstance(
-                type.getClassLoader(),
-                new Class<?>[] {type},
-                (proxy, method, args) ->
-                {
-                    if (method.getName().equals("bulkWrite") && writes.incrementAndGet() == 2) {
-                        throw new MongoSocketReadException("connection reset", new ServerAddress());
-                    }
+            return type.cast(
+                Proxy.newProxyInstance(
+                    type.getClassLoader(),
+                    new Class<?>[] { type },
+                    (proxy, method, args) ->
+                    {
+                        if (method.getName().equals("bulkWrite") && writes.incrementAndGet() == 2) {
+                            throw new MongoSocketReadException("connection reset", new ServerAddress());
+                        }
 
-                    Object result;
-                    try {
-                        result = method.invoke(target, args);
-                    } catch (InvocationTargetException e) {
-                        throw e.getCause();
-                    }
+                        Object result;
+                        try {
+                            result = method.invoke(target, args);
+                        } catch (InvocationTargetException e) {
+                            throw e.getCause();
+                        }
 
-                    if (result instanceof MongoDatabase database) {
-                        return failSecondWrite(database, MongoDatabase.class, writes);
+                        if (result instanceof MongoDatabase database) {
+                            return failSecondWrite(database, MongoDatabase.class, writes);
+                        }
+                        if (result instanceof MongoCollection collection) {
+                            return failSecondWrite(collection, (Class) MongoCollection.class, writes);
+                        }
+                        return result;
                     }
-                    if (result instanceof MongoCollection collection) {
-                        return failSecondWrite(collection, (Class) MongoCollection.class, writes);
-                    }
-                    return result;
-                }
-            ));
+                )
+            );
         }
     }
 
@@ -531,13 +541,15 @@ class BulkTest extends MongoDbContainer {
 
     @Test
     void blankAndWhitespaceLinesAreSkipped() throws IOException {
-        var input = new BufferedReader(new StringReader(
-            "\n"
-            + "{\"insertOne\": {\"document\": {\"a\": 1}}}\n"
-            + "   \n"
-            + "{\"insertOne\": {\"document\": {\"b\": 2}}}\n"
-            + "\n"
-        ));
+        var input = new BufferedReader(
+            new StringReader(
+                "\n"
+                    + "{\"insertOne\": {\"document\": {\"a\": 1}}}\n"
+                    + "   \n"
+                    + "{\"insertOne\": {\"document\": {\"b\": 2}}}\n"
+                    + "\n"
+            )
+        );
 
         var requests = Flux
             .create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER)
@@ -549,9 +561,11 @@ class BulkTest extends MongoDbContainer {
 
     @Test
     void lineWithMultipleOperationKeysFails() throws IOException {
-        var input = new BufferedReader(new StringReader(
-            "{\"insertOne\": {\"document\": {\"_id\": 1}}, \"deleteMany\": {\"filter\": {}}}\n"
-        ));
+        var input = new BufferedReader(
+            new StringReader(
+                "{\"insertOne\": {\"document\": {\"_id\": 1}}, \"deleteMany\": {\"filter\": {}}}\n"
+            )
+        );
 
         var ex = assertThrows(
             IllegalArgumentException.class,
@@ -566,10 +580,12 @@ class BulkTest extends MongoDbContainer {
 
     @Test
     void deleteOneAndDeleteManyHonourCollationAndHint() throws IOException {
-        var input = new BufferedReader(new StringReader(
-            "{\"deleteOne\":  {\"filter\": {\"city\": \"paris\"}, \"collation\": {\"locale\": \"en\", \"strength\": 2}, \"hint\": \"idx_city\"}}\n"
-            + "{\"deleteMany\": {\"filter\": {\"city\": \"paris\"}, \"collation\": {\"locale\": \"en\", \"strength\": 2}, \"hint\": {\"city\": 1}}}\n"
-        ));
+        var input = new BufferedReader(
+            new StringReader(
+                "{\"deleteOne\":  {\"filter\": {\"city\": \"paris\"}, \"collation\": {\"locale\": \"en\", \"strength\": 2}, \"hint\": \"idx_city\"}}\n"
+                    + "{\"deleteMany\": {\"filter\": {\"city\": \"paris\"}, \"collation\": {\"locale\": \"en\", \"strength\": 2}, \"hint\": {\"city\": 1}}}\n"
+            )
+        );
 
         var requests = Flux
             .create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER)
@@ -589,10 +605,12 @@ class BulkTest extends MongoDbContainer {
 
     @Test
     void updateOneAndReplaceOneHonourHint() throws IOException {
-        var input = new BufferedReader(new StringReader(
-            "{\"updateOne\":  {\"filter\": {\"_id\": 1}, \"update\": {\"$set\": {\"a\": 1}}, \"hint\": \"idx_id\"}}\n"
-            + "{\"replaceOne\": {\"filter\": {\"_id\": 1}, \"replacement\": {\"b\": 2},  \"hint\": {\"_id\": 1}}}\n"
-        ));
+        var input = new BufferedReader(
+            new StringReader(
+                "{\"updateOne\":  {\"filter\": {\"_id\": 1}, \"update\": {\"$set\": {\"a\": 1}}, \"hint\": \"idx_id\"}}\n"
+                    + "{\"replaceOne\": {\"filter\": {\"_id\": 1}, \"replacement\": {\"b\": 2},  \"hint\": {\"_id\": 1}}}\n"
+            )
+        );
 
         var requests = Flux
             .create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER)
@@ -610,9 +628,11 @@ class BulkTest extends MongoDbContainer {
 
     @Test
     void invalidHintTypeFails() {
-        var input = new BufferedReader(new StringReader(
-            "{\"deleteOne\": {\"filter\": {\"_id\": 1}, \"hint\": 123}}\n"
-        ));
+        var input = new BufferedReader(
+            new StringReader(
+                "{\"deleteOne\": {\"filter\": {\"_id\": 1}, \"hint\": 123}}\n"
+            )
+        );
 
         var ex = assertThrows(
             IllegalArgumentException.class,
@@ -630,12 +650,14 @@ class BulkTest extends MongoDbContainer {
         var database = newDatabase();
         try (MongoClient client = getMongoClient()) {
             client.getDatabase(database).getCollection("coll_delete")
-                .insertMany(List.of(
-                    new Document("city", "Paris"),
-                    new Document("city", "paris"),
-                    new Document("city", "PARIS"),
-                    new Document("city", "London")
-                ));
+                .insertMany(
+                    List.of(
+                        new Document("city", "Paris"),
+                        new Document("city", "paris"),
+                        new Document("city", "PARIS"),
+                        new Document("city", "London")
+                    )
+                );
         }
 
         var output = runBulk(
@@ -732,17 +754,84 @@ class BulkTest extends MongoDbContainer {
             .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
             .database(Property.ofValue(database))
             .collection(Property.ofValue("blank_line_failing"))
-            .from(Property.ofValue(store(
-                "{\"insertOne\": {\"document\": {\"_id\": 1}}}",
-                "",
-                "   ",
-                "{\"insertOne\": {\"document\": {\"_id\": 1}}}"
-            ).toString()))
+            .from(
+                Property.ofValue(
+                    store(
+                        "{\"insertOne\": {\"document\": {\"_id\": 1}}}",
+                        "",
+                        "   ",
+                        "{\"insertOne\": {\"document\": {\"_id\": 1}}}"
+                    ).toString()
+                )
+            )
             .build();
 
         var e = assertThrows(RunnableTaskException.class, () -> bulk.run(runContext));
 
         assertThat(e.getMessage(), startsWith("Record 2 failed (1 record applied before it): E11000 duplicate key error"));
+    }
+
+    @Test
+    void invalidUpdateAndReplacementDocumentsFailWithLineNumber() {
+        var operations = List.of(
+            "{\"updateOne\": {\"filter\": {\"_id\": 1}, \"update\": {\"n\": 5}}}",
+            "{\"updateMany\": {\"filter\": {\"_id\": 1}, \"update\": {\"status\": \"done\"}}}",
+            "{\"updateOne\": {\"filter\": {\"_id\": 1}, \"update\": {}}}",
+            "{\"updateMany\": {\"filter\": {\"_id\": 1}, \"update\": {}}}",
+            "{\"replaceOne\": {\"filter\": {\"_id\": 1}, \"replacement\": {\"$set\": {\"a\": 1}}}}"
+        );
+
+        var expectedErrors = List.of(
+            "Invalid bulk request on line 1: All update operators must start with '$', but 'n' does not",
+            "Invalid bulk request on line 1: All update operators must start with '$', but 'status' does not",
+            "Invalid bulk request on line 1: Invalid BSON document for an update. The document may not be empty.",
+            "Invalid bulk request on line 1: Invalid BSON document for an update. The document may not be empty.",
+            "Invalid bulk request on line 1: Field names in a replacement document can not start with '$' but '$set' does"
+        );
+
+        for (int i = 0; i < operations.size(); i++) {
+            var input = new BufferedReader(new StringReader(operations.get(i)));
+            var ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> Flux.create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER)
+                    .count()
+                    .block()
+            );
+            assertThat(ex.getMessage(), is(expectedErrors.get(i)));
+        }
+    }
+
+    @Test
+    void replaceOneAllowsDbRefKeysInReplacementDocument() throws IOException {
+        var input = new BufferedReader(
+            new StringReader(
+                "{\"replaceOne\": {\"filter\": {\"_id\": 1}, \"replacement\": {\"$ref\": \"coll\", \"$id\": 1, \"$db\": \"db\"}}}"
+            )
+        );
+
+        var requests = Flux
+            .create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER)
+            .collectList()
+            .block();
+
+        assertThat(requests, hasSize(1));
+    }
+
+    @Test
+    void driverValidationFailureDuringBulkRunReportsOffendingLineAndSendsNothing() throws Exception {
+        var database = newDatabase();
+        var ex = assertThrows(
+            RunnableTaskException.class,
+            () -> runBulk(
+                database, "driver_reject",
+                "{\"insertOne\": {\"document\": {\"_id\": 1, \"n\": 1}}}",
+                "{\"insertOne\": {\"document\": {\"_id\": 2, \"n\": 2}}}",
+                "{\"updateOne\": {\"filter\": {\"_id\": 1}, \"update\": {\"n\": 5}}}"
+            )
+        );
+
+        assertThat(ex.getMessage(), is("Invalid bulk request on line 3: All update operators must start with '$', but 'n' does not (0 records applied before it)"));
+        assertThat(findAll(database, "driver_reject"), hasSize(0));
     }
 
     private static List<Document> findAll(String database, String collection) {

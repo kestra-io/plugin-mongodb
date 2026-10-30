@@ -17,7 +17,6 @@ import org.bson.BsonDocument;
 import org.bson.BsonType;
 import org.bson.Document;
 import org.bson.types.ObjectId;
-import com.mongodb.client.model.Sorts;
 import org.junit.jupiter.api.Test;
 
 import com.google.common.collect.ImmutableMap;
@@ -25,6 +24,7 @@ import com.mongodb.MongoBulkWriteException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.model.CreateCollectionOptions;
 import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.Sorts;
 import com.mongodb.client.model.ValidationOptions;
 
 import io.kestra.core.junit.annotations.KestraTest;
@@ -325,7 +325,7 @@ class LoadTest extends MongoDbContainer {
             );
         }
 
-        URI uri = put(IntStream.rangeClosed(1, 10).<Map<String, Object>>mapToObj(n -> Map.of("n", n)).toList());
+        URI uri = put(IntStream.rangeClosed(1, 10).<Map<String, Object>> mapToObj(n -> Map.of("n", n)).toList());
         Load load = load(database, "validated", uri).chunk(Property.ofValue(4)).build();
 
         var e = assertThrows(RunnableTaskException.class, () -> load.run(runContext));
@@ -385,6 +385,43 @@ class LoadTest extends MongoDbContainer {
         assertThat(e.getMessage(), startsWith("Record 1 failed (0 records applied before it): E11000 duplicate key error"));
         assertThat(((Load.Output) e.getOutput()).getInsertedCount(), is(0));
         assertThat(count(database, "retried"), is(2L));
+    }
+
+    @Test
+    void retryWithExistingIdAndMissingIdKeyFailsWithDuplicateKey() throws Exception {
+        String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        URI uri = put(
+            List.of(
+                Map.of("_id", 1, "name", "first"),
+                Map.of("_id", 2, "name", "second")
+            )
+        );
+        Load load = load(database, "retried_existing_id", uri).idKey(Property.ofValue("externalId")).build();
+        var runOutput = load.run(runContextFactory.of());
+        assertThat(runOutput.getInsertedCount(), is(2));
+
+        var e = assertThrows(RunnableTaskException.class, () -> load.run(runContextFactory.of()));
+
+        assertThat(e.getMessage(), startsWith("Record 1 failed (0 records applied before it): E11000 duplicate key error"));
+        assertThat(((Load.Output) e.getOutput()).getInsertedCount(), is(0));
+        assertThat(count(database, "retried_existing_id"), is(2L));
+    }
+
+    @Test
+    void retryWithoutIdKeyInsertsRecordsWithoutIdAgain() throws Exception {
+        String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        URI uri = put(
+            List.of(
+                Map.of("name", "first"),
+                Map.of("name", "second")
+            )
+        );
+        Load load = load(database, "retried_no_id", uri).build();
+        load.run(runContextFactory.of());
+
+        var secondRunOutput = load.run(runContextFactory.of());
+        assertThat(secondRunOutput.getInsertedCount(), is(2));
+        assertThat(count(database, "retried_no_id"), is(4L));
     }
 
     private URI put(List<Map<String, Object>> records) throws Exception {
