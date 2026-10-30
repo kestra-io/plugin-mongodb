@@ -23,6 +23,15 @@ import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.JacksonMapper;
 
 public abstract class MongoDbService {
+    /**
+     * How an ObjectId is rendered in task output. HEX keeps the pre-existing bare hex string; EXTENDED_JSON
+     * wraps it as {"$oid": "..."}, which Load decodes back to an ObjectId.
+     */
+    public enum ObjectIdFormat {
+        HEX,
+        EXTENDED_JSON
+    }
+
     // ofJson() drops null map entries, so {deletedAt: null} becomes {} and matches every document.
     private static final ObjectMapper JSON_WITH_NULL_MAP_ENTRIES = JacksonMapper.ofJson().copy()
         .setDefaultPropertyInclusion(JsonInclude.Value.construct(JsonInclude.Include.NON_NULL, JsonInclude.Include.ALWAYS));
@@ -99,7 +108,7 @@ public abstract class MongoDbService {
         return json.substring(json.indexOf(':') + 1, json.length() - 1).strip();
     }
 
-    public static Object map(BsonValue doc) {
+    public static Object map(BsonValue doc, ObjectIdFormat objectIdFormat) {
         switch (doc.getBsonType()) {
             case NULL:
                 return null;
@@ -132,7 +141,7 @@ public abstract class MongoDbService {
                     .map(
                         e -> new AbstractMap.SimpleEntry<>(
                             e.getKey(),
-                            map(e.getValue())
+                            map(e.getValue(), objectIdFormat)
                         )
                     )
                     // https://bugs.openjdk.java.net/browse/JDK-8148463
@@ -140,11 +149,8 @@ public abstract class MongoDbService {
             case ARRAY:
                 return doc.asArray()
                     .stream()
-                    .map(MongoDbService::map)
+                    .map(value -> map(value, objectIdFormat))
                     .collect(Collectors.toList());
-
-            case OBJECT_ID:
-                return doc.asObjectId().getValue().toString();
 
             // deprecated types, read the way drivers usually decode them
             case SYMBOL:
@@ -153,6 +159,11 @@ public abstract class MongoDbService {
                 return null;
 
             // no JSON equivalent: MongoDB Extended JSON, which Load writes back as the same BSON type
+            case OBJECT_ID:
+                // Load decodes $oid back to an ObjectId, a bare hex string loads as a String
+                return objectIdFormat == ObjectIdFormat.EXTENDED_JSON
+                    ? document("$oid", doc.asObjectId().getValue().toHexString())
+                    : doc.asObjectId().getValue().toHexString();
             case TIMESTAMP:
                 // seconds and increment are unsigned 32-bit values
                 return document(
@@ -174,7 +185,7 @@ public abstract class MongoDbService {
             case JAVASCRIPT:
                 return document("$code", doc.asJavaScript().getCode());
             case JAVASCRIPT_WITH_SCOPE:
-                return document("$code", doc.asJavaScriptWithScope().getCode(), "$scope", map(doc.asJavaScriptWithScope().getScope()));
+                return document("$code", doc.asJavaScriptWithScope().getCode(), "$scope", map(doc.asJavaScriptWithScope().getScope(), objectIdFormat));
             case DB_POINTER:
                 return document(
                     "$dbPointer",

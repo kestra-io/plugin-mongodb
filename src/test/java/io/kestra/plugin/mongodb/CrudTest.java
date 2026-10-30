@@ -96,7 +96,8 @@ class CrudTest extends MongoDbContainer {
 
         Find.Output findOutput = find.run(runContext);
         assertThat(findOutput.getSize(), is(1L));
-        assertThat(((Map<String, Object>) findOutput.getRows().get(0)).get("_id"), is(insertOutput.getInsertedId()));
+        // Find rows carry an ObjectId as a bare hex string by default; EXTENDED_JSON opts into $oid wrappers
+        assertThat(((Map<String, Object>) findOutput.getRows().getFirst()).get("_id"), is(insertOutput.getInsertedId()));
 
         Delete delete = Delete.builder()
             .connection(

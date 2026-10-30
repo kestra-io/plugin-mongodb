@@ -167,6 +167,14 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
     @PluginProperty(group = "destination")
     private Property<FetchType> store = Property.ofValue(FetchType.FETCH);
 
+    @Schema(
+        title = "ObjectId format",
+        description = "HEX returns ObjectIds as bare hex strings, as before. EXTENDED_JSON returns them as $oid wrappers, which Load writes back as ObjectIds. Defaults to HEX."
+    )
+    @Builder.Default
+    @PluginProperty(group = "processing")
+    private Property<MongoDbService.ObjectIdFormat> objectIdFormat = Property.ofValue(MongoDbService.ObjectIdFormat.HEX);
+
     List<Map<String, Object>> renderedStages(RunContext runContext) throws Exception {
         // Property.toString() can print a held list as [{ $match=... }]; convertValue writes the expression.
         var raw = JacksonMapper.ofJson().convertValue(this.pipeline, String.class);
@@ -218,23 +226,27 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
 
             Output.OutputBuilder outputBuilder = Output.builder();
 
+            MongoDbService.ObjectIdFormat objectIdFormat = runContext.render(this.objectIdFormat)
+                .as(MongoDbService.ObjectIdFormat.class)
+                .orElse(MongoDbService.ObjectIdFormat.HEX);
+
             switch (runContext.render(this.store).as(FetchType.class).orElse(FetchType.FETCH)) {
                 case FETCH:
-                    Pair<List<Object>, Long> fetch = this.fetch(aggregate);
+                    Pair<List<Object>, Long> fetch = this.fetch(aggregate, objectIdFormat);
                     outputBuilder
                         .rows(fetch.getLeft())
                         .size(fetch.getRight());
                     break;
 
                 case FETCH_ONE:
-                    Object row = this.fetchOne(aggregate);
+                    Object row = this.fetchOne(aggregate, objectIdFormat);
                     outputBuilder
                         .row(row)
                         .size(row == null ? 0L : 1L);
                     break;
 
                 case STORE:
-                    Pair<URI, Long> store = this.store(runContext, aggregate);
+                    Pair<URI, Long> store = this.store(runContext, aggregate, objectIdFormat);
                     outputBuilder
                         .uri(store.getLeft())
                         .size(store.getRight());
@@ -260,11 +272,11 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
         }
     }
 
-    private Pair<URI, Long> store(RunContext runContext, AggregateIterable<BsonDocument> documents) throws IOException {
+    private Pair<URI, Long> store(RunContext runContext, AggregateIterable<BsonDocument> documents, MongoDbService.ObjectIdFormat objectIdFormat) throws IOException {
         File tempFile = runContext.workingDir().createTempFile(".ion").toFile();
 
         try (var output = new BufferedOutputStream(new FileOutputStream(tempFile), FileSerde.BUFFER_SIZE)) {
-            var flux = Flux.fromIterable(documents).map(document -> MongoDbService.map(document.toBsonDocument()));
+            var flux = Flux.fromIterable(documents).map(document -> MongoDbService.map(document.toBsonDocument(), objectIdFormat));
             Long count = FileSerde.writeAll(output, flux).block();
 
             return Pair.of(
@@ -274,7 +286,7 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
         }
     }
 
-    private Pair<List<Object>, Long> fetch(AggregateIterable<BsonDocument> documents) {
+    private Pair<List<Object>, Long> fetch(AggregateIterable<BsonDocument> documents, MongoDbService.ObjectIdFormat objectIdFormat) {
         List<Object> result = new ArrayList<>();
         AtomicLong count = new AtomicLong();
 
@@ -282,7 +294,7 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
             .forEach(throwConsumer(bsonDocument ->
             {
                 count.incrementAndGet();
-                result.add(MongoDbService.map(bsonDocument.toBsonDocument()));
+                result.add(MongoDbService.map(bsonDocument.toBsonDocument(), objectIdFormat));
             }));
 
         return Pair.of(
@@ -291,9 +303,9 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
         );
     }
 
-    private Object fetchOne(AggregateIterable<BsonDocument> documents) {
+    private Object fetchOne(AggregateIterable<BsonDocument> documents, MongoDbService.ObjectIdFormat objectIdFormat) {
         var first = documents.first();
-        return first == null ? null : MongoDbService.map(first.toBsonDocument());
+        return first == null ? null : MongoDbService.map(first.toBsonDocument(), objectIdFormat);
     }
 
     private long count(AggregateIterable<BsonDocument> documents) {

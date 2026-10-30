@@ -147,6 +147,14 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
     @PluginProperty(group = "destination")
     private Property<Boolean> store = Property.ofValue(false);
 
+    @Schema(
+        title = "ObjectId format",
+        description = "HEX returns ObjectIds as bare hex strings, as before. EXTENDED_JSON returns them as $oid wrappers, which Load writes back as ObjectIds, so a Find with store: true followed by Load keeps the type. Defaults to HEX."
+    )
+    @Builder.Default
+    @PluginProperty(group = "processing")
+    private Property<MongoDbService.ObjectIdFormat> objectIdFormat = Property.ofValue(MongoDbService.ObjectIdFormat.HEX);
+
     @Override
     public Find.Output run(RunContext runContext) throws Exception {
         try (MongoClient client = this.client(runContext)) {
@@ -198,14 +206,18 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
 
         Output.OutputBuilder builder = Output.builder();
 
+        MongoDbService.ObjectIdFormat objectIdFormat = runContext.render(this.objectIdFormat)
+            .as(MongoDbService.ObjectIdFormat.class)
+            .orElse(MongoDbService.ObjectIdFormat.HEX);
+
         if (runContext.render(this.store).as(Boolean.class).orElseThrow()) {
-            Pair<URI, Long> store = this.store(runContext, find, cursorListener, queryHook);
+            Pair<URI, Long> store = this.store(runContext, find, cursorListener, queryHook, objectIdFormat);
 
             builder
                 .uri(store.getLeft())
                 .size(store.getRight());
         } else {
-            Pair<ArrayList<Object>, Long> fetch = this.fetch(find, cursorListener, queryHook);
+            Pair<ArrayList<Object>, Long> fetch = this.fetch(find, cursorListener, queryHook, objectIdFormat);
 
             builder
                 .rows(fetch.getLeft())
@@ -226,7 +238,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         return output;
     }
 
-    private Pair<URI, Long> store(RunContext runContext, FindIterable<BsonDocument> documents, Consumer<MongoCursor<BsonDocument>> cursorListener, QueryHook queryHook) throws IOException {
+    private Pair<URI, Long> store(RunContext runContext, FindIterable<BsonDocument> documents, Consumer<MongoCursor<BsonDocument>> cursorListener, QueryHook queryHook, MongoDbService.ObjectIdFormat objectIdFormat) throws IOException {
         File tempFile = runContext.workingDir().createTempFile(".ion").toFile();
 
         try (
@@ -238,7 +250,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
                 .map(document ->
                 {
                     queryHook.document(document);
-                    return MongoDbService.map(document.toBsonDocument());
+                    return MongoDbService.map(document.toBsonDocument(), objectIdFormat);
                 });
             Long count = FileSerde.writeAll(output, flux).block();
 
@@ -249,7 +261,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         }
     }
 
-    private Pair<ArrayList<Object>, Long> fetch(FindIterable<BsonDocument> documents, Consumer<MongoCursor<BsonDocument>> cursorListener, QueryHook queryHook) {
+    private Pair<ArrayList<Object>, Long> fetch(FindIterable<BsonDocument> documents, Consumer<MongoCursor<BsonDocument>> cursorListener, QueryHook queryHook, MongoDbService.ObjectIdFormat objectIdFormat) {
         ArrayList<Object> result = new ArrayList<>();
         AtomicLong count = new AtomicLong();
 
@@ -259,7 +271,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
                 BsonDocument bsonDocument = mongoCursor.next();
                 queryHook.document(bsonDocument);
                 count.incrementAndGet();
-                result.add(MongoDbService.map(bsonDocument.toBsonDocument()));
+                result.add(MongoDbService.map(bsonDocument.toBsonDocument(), objectIdFormat));
             }
         }
 
