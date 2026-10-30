@@ -151,7 +151,7 @@ class LoadTest extends MongoDbContainer {
         OutputStream output = new FileOutputStream(tempFile);
 
         // a bare 24-character hex string, still accepted by the idKey path, and an $oid wrapper, as Find with
-        // store: true now writes an ObjectId
+        // store: true and objectIdFormat EXTENDED_JSON writes an ObjectId
         ObjectId hexId = new ObjectId();
         ObjectId wrappedId = new ObjectId();
         FileSerde.write(output, ImmutableMap.of("_id", hexId.toString(), "name", "john"));

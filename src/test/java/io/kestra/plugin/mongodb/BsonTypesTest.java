@@ -145,9 +145,49 @@ class BsonTypesTest extends MongoDbContainer {
     }
 
     @Test
+    void triggerWithExtendedJsonObjectIdsWrapsObjectIds() throws Exception {
+        var trigger = Trigger.builder()
+            .id("watch")
+            .type(Trigger.class.getName())
+            .connection(connection())
+            .database(Property.ofValue(this.database))
+            .collection(Property.ofValue(COLLECTION))
+            .objectIdFormat(Property.ofValue(MongoDbService.ObjectIdFormat.EXTENDED_JSON))
+            .build();
+        var flow = Flow.builder()
+            .id("bson-types-extended")
+            .namespace("io.kestra.tests")
+            .tenantId(TenantService.MAIN_TENANT)
+            .revision(1)
+            .triggers(List.of(trigger))
+            .build();
+        var triggerContext = TriggerContext.builder()
+            .tenantId(TenantService.MAIN_TENANT)
+            .namespace("io.kestra.tests")
+            .flowId("bson-types-extended")
+            .triggerId("watch")
+            .date(ZonedDateTime.now())
+            .build();
+        RunContext runContext = runContextFactory.initializer()
+            .forScheduler((DefaultRunContext) runContextFactory.of(flow, trigger), triggerContext, trigger);
+        var conditionContext = ConditionContext.builder().flow(flow).runContext(runContext).build();
+
+        var execution = trigger.evaluate(conditionContext, triggerContext).orElseThrow();
+
+        var row = (Map<?, ?>) ((List<?>) execution.getTrigger().getVariables().get("rows")).getFirst();
+        assertThat(row.get("oid"), is(Map.of("$oid", "60930c39a982931c20ef6cd6")));
+    }
+
+    @Test
+    void findWithExtendedJsonObjectIdsWrapsObjectIds() throws Exception {
+        var row = (Map<?, ?>) find(runContextFactory.of(), false, MongoDbService.ObjectIdFormat.EXTENDED_JSON).getRows().getFirst();
+        assertThat(row.get("oid"), is(Map.of("$oid", "60930c39a982931c20ef6cd6")));
+    }
+
+    @Test
     void loadWritesTheExtendedJsonBackAsTheSameType() throws Exception {
         var runContext = runContextFactory.of();
-        var stored = find(runContext, true).getUri();
+        var stored = find(runContext, true, MongoDbService.ObjectIdFormat.EXTENDED_JSON).getUri();
 
         Load.builder()
             .id(IdUtils.create())
@@ -166,8 +206,9 @@ class BsonTypesTest extends MongoDbContainer {
                 assertThat(field, copy.get(field), is(original.get(field)));
             }
 
-            // an ObjectId inside a JavaScript scope round-trips as an ObjectId now that map() wraps it; the Instant
-            // in the same scope still comes back as a string, since map() reads a date as an Instant, not a wrapper
+            // under EXTENDED_JSON, map() wraps an ObjectId, so one inside a JavaScript scope round-trips as an
+            // ObjectId; the Instant in the same scope still comes back as a string, since map() reads a date as an
+            // Instant, not a wrapper
             assertThat(
                 copy.get("codeWithScopeValues").asJavaScriptWithScope().getScope(),
                 is(new BsonDocument("id", new BsonObjectId(new ObjectId("60930c39a982931c20ef6cd6"))).append("at", new BsonString("2024-01-01T10:00:00Z")))
@@ -177,8 +218,9 @@ class BsonTypesTest extends MongoDbContainer {
 
     /**
      * The Find with store: true then Load copy path used to rewrite every ObjectId to a plain string, so the copy
-     * stopped matching the source under BSON type-aware equality. The stored row now carries $oid wrappers, and the
-     * copy keeps the ObjectIds, including references, nested documents and array elements.
+     * stopped matching the source under BSON type-aware equality. With objectIdFormat EXTENDED_JSON, the stored row
+     * carries $oid wrappers, and the copy keeps the ObjectIds, including references, nested documents and array
+     * elements.
      */
     @Test
     void findStoreThenLoadKeepsObjectIds() throws Exception {
@@ -206,6 +248,7 @@ class BsonTypesTest extends MongoDbContainer {
             .database(Property.ofValue(this.database))
             .collection(Property.ofValue("objectid_src"))
             .store(Property.ofValue(true))
+            .objectIdFormat(Property.ofValue(MongoDbService.ObjectIdFormat.EXTENDED_JSON))
             .build()
             .run(runContext)
             .getUri();
@@ -256,9 +299,9 @@ class BsonTypesTest extends MongoDbContainer {
         expected.put("maxKey", "{'$maxKey':1}");
         expected.put("code", "{'$code':'function(){return 1;}'}");
         expected.put("codeWithScope", "{'$code':'function(){return x;}','$scope':{'x':1}}");
-        expected.put("codeWithScopeValues", "{'$code':'function(){return id;}','$scope':{'id':{'$oid':'60930c39a982931c20ef6cd6'},'at':'2024-01-01T10:00:00Z'}}");
+        expected.put("codeWithScopeValues", "{'$code':'function(){return id;}','$scope':{'id':'60930c39a982931c20ef6cd6','at':'2024-01-01T10:00:00Z'}}");
         expected.put("dbPointer", "{'$dbPointer':{'$ref':'db.coll','$id':{'$oid':'60930c39a982931c20ef6cd6'}}}");
-        expected.put("oid", "{'$oid':'60930c39a982931c20ef6cd6'}");
+        expected.put("oid", "'60930c39a982931c20ef6cd6'");
         expected.put("symbol", "'sym'");
         expected.put("undefined", "null");
         expected.put("nested", "{'timestamp':{'$timestamp':{'t':1700000000,'i':7}},'decimal':0.10}");
@@ -288,6 +331,10 @@ class BsonTypesTest extends MongoDbContainer {
     }
 
     private Find.Output find(RunContext runContext, boolean store) throws Exception {
+        return find(runContext, store, MongoDbService.ObjectIdFormat.HEX);
+    }
+
+    private Find.Output find(RunContext runContext, boolean store, MongoDbService.ObjectIdFormat objectIdFormat) throws Exception {
         return Find.builder()
             .id(IdUtils.create())
             .type(Find.class.getName())
@@ -295,6 +342,7 @@ class BsonTypesTest extends MongoDbContainer {
             .database(Property.ofValue(this.database))
             .collection(Property.ofValue(COLLECTION))
             .store(Property.ofValue(store))
+            .objectIdFormat(Property.ofValue(objectIdFormat))
             .build()
             .run(runContext);
     }

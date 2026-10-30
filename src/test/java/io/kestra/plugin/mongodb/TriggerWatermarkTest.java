@@ -96,7 +96,7 @@ class TriggerWatermarkTest extends MongoDbContainer {
 
         assertThat(poll(trigger), contains(1));
         assertThat(poll(trigger), contains("a"));
-        assertThat(poll(trigger), contains(Map.of("$oid", objectId.toHexString())));
+        assertThat(poll(trigger), contains(objectId.toHexString()));
         assertThat(poll(trigger), contains(2));
         assertThat(poll(trigger), empty());
     }
@@ -109,7 +109,7 @@ class TriggerWatermarkTest extends MongoDbContainer {
 
         var objectId = new ObjectId();
         insert(new Document("_id", objectId).append("updatedAt", at(1)), new Document("_id", "k2").append("updatedAt", at(1)));
-        assertThat(poll(trigger), contains("k2", Map.of("$oid", objectId.toHexString())));
+        assertThat(poll(trigger), contains("k2", objectId.toHexString()));
         assertThat(poll(trigger), empty());
     }
 
@@ -169,13 +169,13 @@ class TriggerWatermarkTest extends MongoDbContainer {
         insert(new Document("_id", first), new Document("_id", second));
         var trigger = trigger("_id").build();
 
-        assertThat(poll(trigger), contains(Map.of("$oid", first.toHexString()), Map.of("$oid", second.toHexString())));
+        assertThat(poll(trigger), contains(first.toHexString(), second.toHexString()));
         assertThat(storedPosition(trigger).orElseThrow().getObjectId("value").getValue(), is(second));
         assertThat(poll(trigger), empty());
 
         var third = new ObjectId();
         insert(new Document("_id", third));
-        assertThat(poll(trigger), contains(Map.of("$oid", third.toHexString())));
+        assertThat(poll(trigger), contains(third.toHexString()));
     }
 
     @Test
