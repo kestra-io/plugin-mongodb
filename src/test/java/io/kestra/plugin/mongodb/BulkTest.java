@@ -54,6 +54,7 @@ import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.startsWith;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -284,10 +285,56 @@ class BulkTest extends MongoDbContainer {
             .from(Property.ofValue(uri.toString()))
             .build();
 
-        var e = assertThrows(IllegalArgumentException.class, () -> bulk.run(runContextFactory.of()));
+        var e = assertThrows(RunnableTaskException.class, () -> bulk.run(runContextFactory.of()));
 
-        assertThat(e.getMessage(), is("Line 2 is not valid UTF-8"));
+        assertThat(e.getMessage(), is("Line 2 is not valid UTF-8: re-encode the file as UTF-8 (0 records applied before it)"));
         assertThat(findAll(database, "latin1"), hasSize(0));
+    }
+
+    @Test
+    void readFailureReportsTheOperationsApplied() throws Exception {
+        var database = newDatabase();
+        var uri = store(
+            ("{\"insertOne\": {\"document\": {\"_id\": 1}}}\n{\"insertOne\": {\"document\": {\"_id\": 2}}}\n"
+                + "{\"insertOne\": {\"document\": {\"_id\": 3}}}\n{\"insertOne\": {\"document\": {\"name\": \"café\"}}}\n")
+                .getBytes(StandardCharsets.ISO_8859_1)
+        );
+        var bulk = Bulk.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("partial"))
+            .from(Property.ofValue(uri.toString()))
+            .chunk(Property.ofValue(2))
+            .build();
+
+        var e = assertThrows(RunnableTaskException.class, () -> bulk.run(runContextFactory.of()));
+
+        assertThat(e.getMessage(), is("Line 4 is not valid UTF-8: re-encode the file as UTF-8 (2 records applied before it)"));
+        assertThat(e.getCause(), nullValue());
+        assertThat(((Bulk.Output) e.getOutput()).getInsertedCount(), is(2));
+        assertThat(findAll(database, "partial"), hasSize(2));
+    }
+
+    @Test
+    void crlfLineEndingsAreKept() throws Exception {
+        var database = newDatabase();
+        var uri = store(
+            ("{\"insertOne\": {\"document\": {\"_id\": 1, \"name\": \"plain\"}}}\r\n{\"insertOne\": {\"document\": {\"_id\": 2, \"name\": \"café ☕\"}}}\r\n")
+                .getBytes(StandardCharsets.UTF_8)
+        );
+        var bulk = Bulk.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("crlf"))
+            .from(Property.ofValue(uri.toString()))
+            .build();
+
+        bulk.run(runContextFactory.of());
+
+        assertThat(
+            findAll(database, "crlf"),
+            is(List.of(new Document("_id", 1).append("name", "plain"), new Document("_id", 2).append("name", "café ☕")))
+        );
     }
 
     @Test
