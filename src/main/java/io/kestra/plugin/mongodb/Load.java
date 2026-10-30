@@ -1,6 +1,10 @@
 package io.kestra.plugin.mongodb;
 
 import java.io.InputStream;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.time.OffsetDateTime;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -11,6 +15,7 @@ import org.bson.BsonObjectId;
 import org.bson.BsonValue;
 import org.bson.Document;
 import org.bson.conversions.Bson;
+import org.bson.types.Decimal128;
 import org.bson.types.ObjectId;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -42,7 +47,15 @@ import static io.kestra.core.utils.Rethrow.throwFunction;
 @Schema(
     title = "Bulk insert documents from internal storage",
     description = """
-        Reads a Kestra internal storage file of JSON/BSON records and inserts them with MongoDB bulkWrite. Inherits chunking (default 1000). Optionally derives _id from a field and removes that field. Objects whose first key is a MongoDB Extended JSON type wrapper (such as `$date`, `$oid` or `$numberDecimal`) are decoded to that BSON type; a malformed wrapper fails the task with the record and field it was found in. When a write fails, the task fails with the number of the failing record, and its outputs count the records applied before it, which stay in the collection. A retry reads the whole file again: without `idKey`, the records already written are inserted a second time; with `idKey`, records with a present `idKey` fail on retry with a duplicate key error (records where `idKey` is missing or null receive a generated ObjectId and are inserted again)."""
+        Reads a Kestra internal storage file of JSON/BSON records and inserts them with MongoDB bulkWrite.
+        Inherits chunking (default 1000).
+        Optionally derives _id from a field and removes that field.
+        Objects whose first key is a MongoDB Extended JSON type wrapper (such as `$date`, `$oid` or `$numberDecimal`) are decoded to that BSON type; a malformed wrapper fails the task with the record and field it was found in.
+        Offset-aware and zoned date-times are stored as BSON dates representing the same UTC instant, without retaining the original offset or timezone.
+        BigInteger values are stored as Decimal128 when exactly representable; otherwise, the task fails with the record number and field path.
+        When a write fails, the task fails with the number of the failing record, and its outputs count the records applied before it, which stay in the collection.
+        A retry reads the whole file again: without `idKey`, the records already written are inserted a second time; with `idKey`, records with a present `idKey` fail on retry with a duplicate key error (records where `idKey` is missing or null receive a generated ObjectId and are inserted again).
+        """
 )
 @Plugin(
     examples = {
@@ -83,6 +96,10 @@ import static io.kestra.core.utils.Rethrow.throwFunction;
     }
 )
 public class Load extends AbstractLoad {
+    // Decimal128's largest finite integer is its maximum 34-digit coefficient scaled by exponent 6111.
+    private static final BigInteger DECIMAL128_MAX_INTEGER =
+        BigInteger.TEN.pow(34).subtract(BigInteger.ONE).multiply(BigInteger.TEN.pow(6111));
+
     @Schema(
         title = "Field used as _id",
         description = """
@@ -160,7 +177,13 @@ public class Load extends AbstractLoad {
 
     @SuppressWarnings("unchecked")
     private static Object decodeExtendedJson(Object value, long record, String path) throws JsonProcessingException {
-        if (value instanceof Map<?, ?> map) {
+        if (value instanceof OffsetDateTime offsetDateTime) {
+            return offsetDateTime.toInstant();
+        } else if (value instanceof ZonedDateTime zonedDateTime) {
+            return zonedDateTime.toInstant();
+        } else if (value instanceof BigInteger bigInteger) {
+            return decodeBigInteger(bigInteger, record, path);
+        } else if (value instanceof Map<?, ?> map) {
             // the driver's JsonReader only interprets an object as Extended JSON based on its first key
             String firstKey = map.isEmpty() ? null : map.keySet().iterator().next().toString();
             if (firstKey != null && EXTENDED_JSON_WRAPPER_KEYS.contains(firstKey)) {
@@ -186,5 +209,29 @@ public class Load extends AbstractLoad {
             }
         }
         return value;
+    }
+
+    private static Decimal128 decodeBigInteger(BigInteger value, long record, String path) {
+        if (value.abs().compareTo(DECIMAL128_MAX_INTEGER) > 0) {
+            throw bigIntegerConversionError(record, path, "value exceeds Decimal128's maximum finite integer magnitude");
+        }
+
+        try {
+            return new Decimal128(new BigDecimal(value));
+        } catch (NumberFormatException e) {
+            throw bigIntegerConversionError(record, path, "MongoDB's Decimal128 driver rejected the exact representation", e);
+        }
+    }
+
+    private static IllegalArgumentException bigIntegerConversionError(long record, String path, String reason) {
+        return bigIntegerConversionError(record, path, reason, null);
+    }
+
+    private static IllegalArgumentException bigIntegerConversionError(long record, String path, String reason, NumberFormatException cause) {
+        return new IllegalArgumentException(
+            "Record " + record + ", field '" + path + "': BigInteger cannot be represented exactly as Decimal128: " + reason +
+                "; store it as a string to keep every digit",
+            cause
+        );
     }
 }
