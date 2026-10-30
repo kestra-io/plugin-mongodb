@@ -44,7 +44,10 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 @NoArgsConstructor
 @Schema(
     title = "Run an aggregation pipeline",
-    description = "Executes a MongoDB aggregation pipeline on a collection. Pipeline stages are rendered from Flow variables as BSON documents. Allows disk use by default, caps server execution at 60s, batches 1000 docs, and fetches the results into the outputs by default; use `store: STORE` for large results, which writes them to internal storage."
+    description = """
+        Executes a MongoDB aggregation pipeline on a collection. Pipeline stages are rendered from Flow variables as BSON documents. Allows disk use by default, caps server execution at 60s and batches 1000 docs.
+        Results are fetched into the outputs by default. Use `store: STORE` for large results, which writes them to internal storage.
+        """
 )
 @Plugin(
     examples = {
@@ -161,7 +164,10 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
 
     @Schema(
         title = "Result handling",
-        description = "FETCH returns all rows in `rows`, FETCH_ONE a single row in `row`, NONE only the `size`, STORE writes an Ion file to internal storage. Defaults to FETCH. FETCH holds every row in memory and saves it in the execution, so use STORE for large results: Kestra 2.0 rejects task outputs larger than 1 MiB by default, and the task logs a warning above that size."
+        description = """
+            FETCH returns all rows in `rows`, FETCH_ONE a single row in `row`, NONE only the `size`, STORE writes an Ion file to internal storage. Defaults to FETCH.
+            FETCH holds every row in memory and saves it in the execution. Use STORE for large results: Kestra rejects task results above `kestra.queue.message-protection.limit` (1 MiB by default since 2.0), and the task logs a warning when the rows pass 1 MiB.
+            """
     )
     @Builder.Default
     @PluginProperty(group = "destination")
@@ -220,7 +226,7 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
 
             switch (runContext.render(this.store).as(FetchType.class).orElse(FetchType.FETCH)) {
                 case FETCH:
-                    Pair<List<Object>, Long> fetch = this.fetch(aggregate, logger);
+                    var fetch = this.fetch(aggregate, logger);
                     outputBuilder
                         .rows(fetch.getLeft())
                         .size(fetch.getRight());
@@ -274,7 +280,7 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
         }
     }
 
-    private Pair<List<Object>, Long> fetch(AggregateIterable<BsonDocument> documents, Logger logger) {
+    private Pair<List<Object>, Long> fetch(AggregateIterable<BsonDocument> documents, Logger logger) throws IOException {
         List<Object> result = new ArrayList<>();
         AtomicLong count = new AtomicLong();
         var outputsSize = new OutputsSize();
@@ -283,8 +289,9 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
             .forEach(throwConsumer(bsonDocument ->
             {
                 count.incrementAndGet();
-                outputsSize.add(bsonDocument);
-                result.add(MongoDbService.map(bsonDocument.toBsonDocument()));
+                var row = MongoDbService.map(bsonDocument.toBsonDocument());
+                outputsSize.add(row);
+                result.add(row);
             }));
 
         outputsSize.warnIfLarge(logger, count.get(), "store: STORE");

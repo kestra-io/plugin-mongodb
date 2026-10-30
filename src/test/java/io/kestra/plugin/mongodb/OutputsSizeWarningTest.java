@@ -1,16 +1,16 @@
 package io.kestra.plugin.mongodb;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.Callable;
 
 import org.bson.Document;
+import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-
-import com.mongodb.client.MongoClient;
 
 import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.common.FetchType;
@@ -32,20 +32,50 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 
 class OutputsSizeWarningTest extends MongoDbContainer {
-    private static final String DATABASE = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+    private static final String DATABASE = "ut_%s".formatted(IdUtils.create().toLowerCase(Locale.ROOT));
     private static final String COLLECTION = "big";
+    private static final String TYPED_COLLECTION = "typed";
 
-    // 1,100 documents of about 1,030 bytes: 1,100 of them pass 1 MiB, 900 stay under it
+    // 1,100 documents of about 1,030 bytes: 1,100 of them pass 1 MiB, 900 stay under it.
+    // 7,000 documents with ObjectIds and dates: about 850 KB as BSON but 1.3 MB as the JSON the queue measures.
     @BeforeAll
     void seed() {
-        try (MongoClient client = getMongoClient()) {
+        try (var client = getMongoClient()) {
             var payload = "x".repeat(1000);
             var documents = new ArrayList<Document>();
-            for (int i = 0; i < 1100; i++) {
+            for (var i = 0; i < 1100; i++) {
                 documents.add(new Document("_id", i).append("payload", payload));
             }
             client.getDatabase(DATABASE).getCollection(COLLECTION).insertMany(documents);
+
+            var typed = new ArrayList<Document>();
+            for (var i = 0; i < 7000; i++) {
+                typed.add(
+                    new Document("_id", new ObjectId())
+                        .append("userId", new ObjectId())
+                        .append("createdAt", new Date(1_700_000_000_000L))
+                        .append("updatedAt", new Date(1_700_000_100_000L))
+                        .append("amount", 1234.5678)
+                        .append("status", "ok")
+                        .append("count", 42)
+                );
+            }
+            client.getDatabase(DATABASE).getCollection(TYPED_COLLECTION).insertMany(typed);
         }
+    }
+
+    @Test
+    void findWarnsWhenTheJsonOfTheRowsPassesOneMiB() throws Exception {
+        var runContext = runContextFactory.of(Map.of());
+        var find = find().collection(Property.ofValue(TYPED_COLLECTION)).build();
+
+        var warnings = warnings(runContext, () ->
+        {
+            assertThat(find.run(runContext).getRows(), hasSize(7000));
+            return null;
+        });
+
+        assertThat(warnings, contains(allOf(containsString("7000 rows"), containsString("store: true"))));
     }
 
     @Test
@@ -87,7 +117,7 @@ class OutputsSizeWarningTest extends MongoDbContainer {
     @Test
     void triggerWarnsWhenItsRowsPassOneMiB() throws Exception {
         var trigger = Trigger.builder()
-            .id("watch_" + IdUtils.create())
+            .id("watch_%s".formatted(IdUtils.create()))
             .type(Trigger.class.getName())
             .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
             .database(Property.ofValue(DATABASE))
@@ -102,6 +132,8 @@ class OutputsSizeWarningTest extends MongoDbContainer {
 
     private Find.FindBuilder<?, ?> find() {
         return Find.builder()
+            .id(IdUtils.create())
+            .type(Find.class.getName())
             .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
             .database(Property.ofValue(DATABASE))
             .collection(Property.ofValue(COLLECTION));
@@ -109,6 +141,8 @@ class OutputsSizeWarningTest extends MongoDbContainer {
 
     private Aggregate.AggregateBuilder<?, ?> aggregate() {
         return Aggregate.builder()
+            .id(IdUtils.create())
+            .type(Aggregate.class.getName())
             .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
             .database(Property.ofValue(DATABASE))
             .collection(Property.ofValue(COLLECTION))
