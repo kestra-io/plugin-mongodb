@@ -5,6 +5,12 @@ import org.bson.BsonDocument;
 import org.bson.conversions.Bson;
 import org.slf4j.Logger;
 
+import com.mongodb.MongoCommandException;
+import com.mongodb.MongoException;
+import com.mongodb.MongoNodeIsRecoveringException;
+import com.mongodb.MongoNotPrimaryException;
+import com.mongodb.MongoSocketException;
+import com.mongodb.MongoTimeoutException;
 import com.mongodb.MongoWriteConcernException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
@@ -33,7 +39,18 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @Schema(
     title = "Update or replace MongoDB documents",
-    description = "Runs MongoDB replaceOne, updateOne, or updateMany on a collection. Defaults to UPDATE_ONE; both filter and document accept BSON maps or strings and are rendered from Flow variables. Requires write access; upserts are not exposed."
+    description = """
+        Runs MongoDB replaceOne, updateOne, or updateMany on a collection. Defaults to UPDATE_ONE; both filter and document accept BSON maps or strings and are rendered from Flow variables. Requires write access; upserts are not exposed.
+
+        ### Failures
+        `UPDATE_MANY` is not atomic. If MongoDB stops answering during the write, for example after a replica-set failover, the task fails and some documents may already be updated. MongoDB returns no result in that case, so the number of updated documents is unknown: the task reports no outputs or `updated.count` metric for it.
+
+        Before retrying, check what the update does when it is applied twice:
+        - `$set` and `REPLACE_ONE` give the same result when repeated, so a retry is safe.
+        - `$inc`, `$push` and `$mul` apply again to the documents that were already updated, so a retry corrupts them.
+
+        To make a retry safe or to count what was applied, stamp the documents with a batch id in the same update: filter on `{"batchId": {"$ne": "<id>"}}` and set `"batchId": "<id>"`. A retry then skips the documents that are already done, and a `Find` on `{"batchId": "<id>"}` gives the applied count.
+        """
 )
 @Plugin(
     examples = {
@@ -93,6 +110,8 @@ import lombok.experimental.SuperBuilder;
     }
 )
 public class Update extends AbstractTask implements RunnableTask<Update.Output> {
+    private static final int INTERRUPTED_DUE_TO_REPL_STATE_CHANGE = 11602;
+
     @Schema(
         title = "Update payload or replacement document",
         description = """
@@ -163,6 +182,20 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
                         .upsertedId(writeConcernResult.getUpsertedId() != null ? MongoDbService.toIdString(writeConcernResult.getUpsertedId()) : null)
                         .build()
                 );
+            } catch (MongoException e) {
+                if (!noResult(e)) {
+                    throw e;
+                }
+
+                // no outputs or metrics: there is no count to report, and a zero would read as "nothing was applied"
+                throw new MongoException(
+                    "The " + rOperation + " failed and MongoDB returned no result, so " +
+                        (Operation.UPDATE_MANY.equals(rOperation)
+                            ? "it's unknown how many documents were updated; some may have been modified"
+                            : "it's unknown whether the document was updated") +
+                        ": " + e.getMessage(),
+                    e
+                );
             }
 
             logger.debug("Updating doc: {} with filter: {}", bsonDocument, bsonFilter);
@@ -187,6 +220,16 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
                 .modifiedCount(acknowledged ? updateResult.getModifiedCount() : null)
                 .build();
         }
+    }
+
+    // a failover or a network error ends the write without an answer; an error MongoDB answered with is definite
+    private static boolean noResult(MongoException e) {
+        return e instanceof MongoSocketException
+            || e instanceof MongoTimeoutException
+            || e instanceof MongoNotPrimaryException
+            || e instanceof MongoNodeIsRecoveringException
+            // the primary stepping down interrupts the running operation
+            || (e instanceof MongoCommandException commandException && commandException.getErrorCode() == INTERRUPTED_DUE_TO_REPL_STATE_CHANGE);
     }
 
     public enum Operation {
