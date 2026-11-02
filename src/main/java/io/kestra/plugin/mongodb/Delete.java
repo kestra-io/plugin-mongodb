@@ -39,15 +39,7 @@ import lombok.experimental.SuperBuilder;
         Runs deleteOne (default) or deleteMany on a collection. Filter supports BSON strings or maps rendered from Flow variables.
 
         ### Failures
-        `DELETE_MANY` is not atomic. The task fails with an unknown outcome, and some documents may already be deleted, when:
-        - MongoDB stops answering during the write, for example after a replica-set failover or a network error.
-        - `DELETE_MANY` stops at a failing document: the documents before it stay deleted.
-
-        `DELETE_ONE` fails with an unknown outcome in the first case. MongoDB returns no count in these cases, so the task reports no outputs or `deleted.count` metric. Errors raised before the delete is sent, such as an unreachable server, fail the task as usual: nothing was deleted.
-
-        Before retrying:
-        - `DELETE_MANY`: a retry with the same filter deletes only the documents that are left, so it is safe, but its `deletedCount` does not include the documents the failed attempt deleted.
-        - `DELETE_ONE`: a retry is safe only when the filter matches at most one document, for example on `_id`. Otherwise it can delete a second document.
+        `DELETE_MANY` is not atomic: if it fails mid-write, some documents may already be deleted and the task reports no count. A retry with the same filter deletes the rest. Retry a `DELETE_ONE` only when its filter matches a single document, such as on `_id`.
         """
 )
 @Plugin(

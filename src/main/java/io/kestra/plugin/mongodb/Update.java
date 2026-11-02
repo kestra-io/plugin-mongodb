@@ -38,18 +38,8 @@ import lombok.experimental.SuperBuilder;
         Runs MongoDB replaceOne, updateOne, or updateMany on a collection. Defaults to UPDATE_ONE; both filter and document accept BSON maps or strings and are rendered from Flow variables. Requires write access; upserts are not exposed.
 
         ### Failures
-        `UPDATE_MANY` is not atomic. The task fails with an unknown outcome, and some documents may already be updated, when:
-        - MongoDB stops answering during the write, for example after a replica-set failover or a network error.
-        - `UPDATE_MANY` stops at a failing document, for example on a duplicate key or a schema validation error: the documents before it stay updated.
-
-        MongoDB returns no count in these cases, so the task reports no outputs or `updated.count` metric. Errors raised before the update is sent, such as an unreachable server, fail the task as usual: nothing was written.
-
-        Before retrying, check what the update does when it is applied twice:
-        - An update that only sets fixed values (`$set`, `$unset`, `REPLACE_ONE`) and does not change the fields the filter matches on gives the same result when repeated, so a retry is safe.
-        - `$inc`, `$push` and `$mul` apply again to the documents that were already updated, so a retry corrupts them.
-        - An update that changes a field the filter matches on, such as filter `{"status": "pending"}` with `$set` `{"status": "done"}`, matches other documents on a retry: `UPDATE_ONE` then updates a second document.
-
-        To make a retry safe or to count what was applied, stamp the documents with a batch id in the same update: add `"batchId": {"$ne": "{{ execution.id }}"}` to your existing filter and set `"batchId": "{{ execution.id }}"`. The execution id stays the same when the task is retried, so a retry skips the documents that are already done, and a `Find` on `{"batchId": "{{ execution.id }}"}` gives the applied count.
+        `UPDATE_MANY` is not atomic: if it fails mid-write (failover, network error, or a failing document such as a duplicate key), some documents may already be updated and the task reports no count.
+        Before retrying, check the update is safe to apply twice: `$inc`, `$push` and `$mul` apply again, and an update that changes a field the filter matches on reaches other documents. To make a retry safe, add `"batchId": {"$ne": "{{ execution.id }}"}` to the filter and set `"batchId": "{{ execution.id }}"`.
         """
 )
 @Plugin(
