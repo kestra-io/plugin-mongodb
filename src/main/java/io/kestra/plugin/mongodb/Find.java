@@ -7,11 +7,11 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
 import org.apache.commons.lang3.tuple.Pair;
 import org.bson.BsonDocument;
 import org.slf4j.Logger;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
@@ -39,7 +39,10 @@ import reactor.core.publisher.Flux;
 @NoArgsConstructor
 @Schema(
     title = "Query documents from MongoDB",
-    description = "Executes find on a collection with optional projection, sort, skip, and limit. Filter/projection/sort accept BSON strings or maps rendered from Flow variables. Results are fetched in-memory by default or stored as Ion in internal storage when `store` is true."
+    description = """
+        Executes find on a collection with optional projection, sort, skip, and limit. Filter/projection/sort accept BSON strings or maps rendered from Flow variables.
+        Results are fetched in-memory into the outputs by default. Set `store` to true for large results, which writes them as Ion to internal storage.
+        """
 )
 @Plugin(
     examples = {
@@ -141,7 +144,10 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
 
     @Schema(
         title = "Store results",
-        description = "When true, writes results as Ion to internal storage; otherwise returns rows. Defaults to false."
+        description = """
+            When true, writes the results as Ion to internal storage and returns their URI. When false, the default, returns every document in `rows`, held in memory and saved in the execution.
+            Keep false for small results: Kestra rejects task results above `kestra.queue.message-protection.limit` (1 MiB by default since 2.0), and the task logs a warning when the rows pass 1 MiB.
+            """
     )
     @Builder.Default
     @PluginProperty(group = "destination")
@@ -205,7 +211,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
                 .uri(store.getLeft())
                 .size(store.getRight());
         } else {
-            Pair<ArrayList<Object>, Long> fetch = this.fetch(find, cursorListener, queryHook);
+            var fetch = this.fetch(find, cursorListener, queryHook, logger);
 
             builder
                 .rows(fetch.getLeft())
@@ -249,9 +255,11 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         }
     }
 
-    private Pair<ArrayList<Object>, Long> fetch(FindIterable<BsonDocument> documents, Consumer<MongoCursor<BsonDocument>> cursorListener, QueryHook queryHook) {
+    private Pair<ArrayList<Object>, Long> fetch(FindIterable<BsonDocument> documents, Consumer<MongoCursor<BsonDocument>> cursorListener, QueryHook queryHook, Logger logger)
+        throws IOException {
         ArrayList<Object> result = new ArrayList<>();
         AtomicLong count = new AtomicLong();
+        var outputsSize = new OutputsSize();
 
         try (MongoCursor<BsonDocument> mongoCursor = documents.cursor()) {
             cursorListener.accept(mongoCursor);
@@ -259,9 +267,13 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
                 BsonDocument bsonDocument = mongoCursor.next();
                 queryHook.document(bsonDocument);
                 count.incrementAndGet();
-                result.add(MongoDbService.map(bsonDocument.toBsonDocument()));
+                var row = MongoDbService.map(bsonDocument.toBsonDocument());
+                outputsSize.add(row);
+                result.add(row);
             }
         }
+
+        outputsSize.warnIfLarge(logger, count.get(), "store: true");
 
         return Pair.of(
             result,
