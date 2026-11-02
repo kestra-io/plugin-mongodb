@@ -5,13 +5,14 @@ import org.bson.BsonDocument;
 import org.bson.conversions.Bson;
 import org.slf4j.Logger;
 
-import com.mongodb.MongoCommandException;
 import com.mongodb.MongoException;
 import com.mongodb.MongoNodeIsRecoveringException;
 import com.mongodb.MongoNotPrimaryException;
+import com.mongodb.MongoOperationTimeoutException;
 import com.mongodb.MongoSocketException;
-import com.mongodb.MongoTimeoutException;
+import com.mongodb.MongoSocketOpenException;
 import com.mongodb.MongoWriteConcernException;
+import com.mongodb.MongoWriteException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.result.UpdateResult;
@@ -43,13 +44,18 @@ import lombok.experimental.SuperBuilder;
         Runs MongoDB replaceOne, updateOne, or updateMany on a collection. Defaults to UPDATE_ONE; both filter and document accept BSON maps or strings and are rendered from Flow variables. Requires write access; upserts are not exposed.
 
         ### Failures
-        `UPDATE_MANY` is not atomic. If MongoDB stops answering during the write, for example after a replica-set failover, the task fails and some documents may already be updated. MongoDB returns no result in that case, so the number of updated documents is unknown: the task reports no outputs or `updated.count` metric for it.
+        `UPDATE_MANY` is not atomic. The task fails with an unknown outcome, and some documents may already be updated, when:
+        - MongoDB stops answering during the write, for example after a replica-set failover or a network error.
+        - `UPDATE_MANY` stops at a failing document, for example on a duplicate key or a schema validation error: the documents before it stay updated.
+
+        MongoDB returns no count in these cases, so the task reports no outputs or `updated.count` metric. Errors raised before the update is sent, such as an unreachable server, fail the task as usual: nothing was written.
 
         Before retrying, check what the update does when it is applied twice:
-        - `$set` and `REPLACE_ONE` give the same result when repeated, so a retry is safe.
+        - An update that only sets fixed values (`$set`, `$unset`, `REPLACE_ONE`) and does not change the fields the filter matches on gives the same result when repeated, so a retry is safe.
         - `$inc`, `$push` and `$mul` apply again to the documents that were already updated, so a retry corrupts them.
+        - An update that changes a field the filter matches on, such as filter `{"status": "pending"}` with `$set` `{"status": "done"}`, matches other documents on a retry: `UPDATE_ONE` then updates a second document.
 
-        To make a retry safe or to count what was applied, stamp the documents with a batch id in the same update: filter on `{"batchId": {"$ne": "<id>"}}` and set `"batchId": "<id>"`. A retry then skips the documents that are already done, and a `Find` on `{"batchId": "<id>"}` gives the applied count.
+        To make a retry safe or to count what was applied, stamp the documents with a batch id in the same update: add `"batchId": {"$ne": "{{ execution.id }}"}` to your existing filter and set `"batchId": "{{ execution.id }}"`. The execution id stays the same when the task is retried, so a retry skips the documents that are already done, and a `Find` on `{"batchId": "{{ execution.id }}"}` gives the applied count.
         """
 )
 @Plugin(
@@ -110,8 +116,6 @@ import lombok.experimental.SuperBuilder;
     }
 )
 public class Update extends AbstractTask implements RunnableTask<Update.Output> {
-    private static final int INTERRUPTED_DUE_TO_REPL_STATE_CHANGE = 11602;
-
     @Schema(
         title = "Update payload or replacement document",
         description = """
@@ -183,17 +187,21 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
                         .build()
                 );
             } catch (MongoException e) {
-                if (!noResult(e)) {
+                var cause = unknownOutcome(rOperation, e);
+                if (cause == null) {
                     throw e;
                 }
 
                 // no outputs or metrics: there is no count to report, and a zero would read as "nothing was applied"
-                throw new MongoException(
-                    "The " + rOperation + " failed and MongoDB returned no result, so " +
-                        (Operation.UPDATE_MANY.equals(rOperation)
+                throw new IllegalStateException(
+                    "The %s failed %s, so %s. Check that the update is safe to apply twice before retrying (see the task's Failures section): %s".formatted(
+                        rOperation,
+                        cause,
+                        Operation.UPDATE_MANY.equals(rOperation)
                             ? "it's unknown how many documents were updated; some may have been modified"
-                            : "it's unknown whether the document was updated") +
-                        ": " + e.getMessage(),
+                            : "it's unknown whether the document was updated",
+                        e.getMessage()
+                    ),
                     e
                 );
             }
@@ -222,14 +230,32 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
         }
     }
 
-    // a failover or a network error ends the write without an answer; an error MongoDB answered with is definite
-    private static boolean noResult(MongoException e) {
-        return e instanceof MongoSocketException
-            || e instanceof MongoTimeoutException
+    /**
+     * Says why the outcome of a failed write is unknown, or returns null when the error is definite.
+     * A failover or a network error during the write ends it without an answer, and {@code updateMany} stopping at a
+     * failing document keeps the documents updated before it; errors raised before the write was sent wrote nothing.
+     */
+    @Nullable
+    static String unknownOutcome(Operation operation, MongoException e) {
+        // the driver labels a failure where it knows nothing was sent, such as after a failed retry
+        if (e.hasErrorLabel("NoWritesPerformed") || e instanceof MongoSocketOpenException) {
+            return null;
+        }
+
+        if (e instanceof MongoSocketException
+            || e instanceof MongoOperationTimeoutException
             || e instanceof MongoNotPrimaryException
-            || e instanceof MongoNodeIsRecoveringException
-            // the primary stepping down interrupts the running operation
-            || (e instanceof MongoCommandException commandException && commandException.getErrorCode() == INTERRUPTED_DUE_TO_REPL_STATE_CHANGE);
+            || e instanceof MongoNodeIsRecoveringException) {
+            // other MongoTimeoutExceptions come from server selection or the connection pool, before the write is sent
+            return "before MongoDB confirmed it";
+        }
+
+        // UPDATE_ONE and REPLACE_ONE touch one document atomically, so their write errors are definite
+        if (Operation.UPDATE_MANY.equals(operation) && e instanceof MongoWriteException) {
+            return "when MongoDB stopped at a failing document";
+        }
+
+        return null;
     }
 
     public enum Operation {
