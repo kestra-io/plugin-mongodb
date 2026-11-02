@@ -42,6 +42,7 @@ import io.kestra.core.serializers.FileSerde;
 import io.kestra.core.storages.StorageInterface;
 import io.kestra.core.tenant.TenantService;
 import io.kestra.core.utils.IdUtils;
+import io.kestra.core.utils.Rethrow;
 
 import jakarta.inject.Inject;
 
@@ -453,7 +454,7 @@ class LoadTest extends MongoDbContainer {
         assertThat(count(database, "idkey_mixed"), is(4L));
     }
 
-    private static List<String> warningsDuring(ThrowingRunnable action) throws Exception {
+    private static List<String> warningsDuring(Rethrow.RunnableChecked<Exception> action) throws Exception {
         var logs = new CopyOnWriteArrayList<ILoggingEvent>();
         var appender = new AppenderBase<ILoggingEvent>() {
             @Override
@@ -474,11 +475,6 @@ class LoadTest extends MongoDbContainer {
             .map(ILoggingEvent::getFormattedMessage)
             .filter(message -> message.contains("generated an ObjectId"))
             .toList();
-    }
-
-    @FunctionalInterface
-    private interface ThrowingRunnable {
-        void run() throws Exception;
     }
 
     private URI put(List<Map<String, Object>> records) throws Exception {
