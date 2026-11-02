@@ -54,6 +54,7 @@ import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.startsWith;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -270,6 +271,82 @@ class BulkTest extends MongoDbContainer {
     }
 
     @Test
+    void lineThatIsNotUtf8FailsWithItsNumber() throws Exception {
+        var database = newDatabase();
+        // "café" written in ISO-8859-1 on line 2: the byte 0xE9 on its own is not valid UTF-8
+        var uri = store(
+            "{\"insertOne\": {\"document\": {\"name\": \"ok\"}}}\n{\"insertOne\": {\"document\": {\"name\": \"café\"}}}\n"
+                .getBytes(StandardCharsets.ISO_8859_1)
+        );
+        var bulk = Bulk.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("latin1"))
+            .from(Property.ofValue(uri.toString()))
+            .build();
+
+        var e = assertThrows(RunnableTaskException.class, () -> bulk.run(runContextFactory.of()));
+
+        assertThat(e.getMessage(), is("Line 2 is not valid UTF-8: re-encode the file as UTF-8 (0 records applied before it)"));
+        assertThat(findAll(database, "latin1"), hasSize(0));
+    }
+
+    @Test
+    void readFailureReportsTheOperationsApplied() throws Exception {
+        var database = newDatabase();
+        var uri = store(
+            ("{\"insertOne\": {\"document\": {\"_id\": 1}}}\n{\"insertOne\": {\"document\": {\"_id\": 2}}}\n"
+                + "{\"insertOne\": {\"document\": {\"_id\": 3}}}\n{\"insertOne\": {\"document\": {\"name\": \"café\"}}}\n")
+                .getBytes(StandardCharsets.ISO_8859_1)
+        );
+        var bulk = Bulk.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("partial"))
+            .from(Property.ofValue(uri.toString()))
+            .chunk(Property.ofValue(2))
+            .build();
+
+        var e = assertThrows(RunnableTaskException.class, () -> bulk.run(runContextFactory.of()));
+
+        assertThat(e.getMessage(), is("Line 4 is not valid UTF-8: re-encode the file as UTF-8 (2 records applied before it)"));
+        assertThat(e.getCause(), nullValue());
+        assertThat(((Bulk.Output) e.getOutput()).getInsertedCount(), is(2));
+        assertThat(findAll(database, "partial"), hasSize(2));
+    }
+
+    @Test
+    void crlfLineEndingsAreKept() throws Exception {
+        var database = newDatabase();
+        var uri = store(
+            ("{\"insertOne\": {\"document\": {\"_id\": 1, \"name\": \"plain\"}}}\r\n{\"insertOne\": {\"document\": {\"_id\": 2, \"name\": \"café ☕\"}}}\r\n")
+                .getBytes(StandardCharsets.UTF_8)
+        );
+        var bulk = Bulk.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
+            .database(Property.ofValue(database))
+            .collection(Property.ofValue("crlf"))
+            .from(Property.ofValue(uri.toString()))
+            .build();
+
+        bulk.run(runContextFactory.of());
+
+        assertThat(
+            findAll(database, "crlf"),
+            is(List.of(new Document("_id", 1).append("name", "plain"), new Document("_id", 2).append("name", "café ☕")))
+        );
+    }
+
+    @Test
+    void multiByteUtf8IsKept() throws Exception {
+        var database = newDatabase();
+
+        runBulk(database, "utf8", "{\"insertOne\": {\"document\": {\"_id\": 1, \"name\": \"café ☕ 😀\"}}}");
+
+        assertThat(findAll(database, "utf8"), is(List.of(new Document("_id", 1).append("name", "café ☕ 😀"))));
+    }
+
+    @Test
     void upsertsAreCounted() throws Exception {
         var database = newDatabase();
         try (MongoClient client = getMongoClient()) {
@@ -436,11 +513,15 @@ class BulkTest extends MongoDbContainer {
     }
 
     private URI store(String... lines) throws Exception {
+        return store((String.join("\n", lines) + "\n").getBytes(StandardCharsets.UTF_8));
+    }
+
+    private URI store(byte[] content) throws Exception {
         return storageInterface.put(
             TenantService.MAIN_TENANT,
             null,
             URI.create("/" + IdUtils.create() + ".ion"),
-            new ByteArrayInputStream((String.join("\n", lines) + "\n").getBytes(StandardCharsets.UTF_8))
+            new ByteArrayInputStream(content)
         );
     }
 
@@ -601,7 +682,7 @@ class BulkTest extends MongoDbContainer {
             "Invalid bulk request on line 1: replaceOne requires a 'replacement' document"
         );
 
-        for (int i = 0; i < operations.size(); i++) {
+        for (var i = 0; i < operations.size(); i++) {
             var input = new BufferedReader(new StringReader(operations.get(i)));
             var ex = assertThrows(
                 IllegalArgumentException.class,
@@ -631,7 +712,7 @@ class BulkTest extends MongoDbContainer {
             "Invalid bulk request on line 1: replaceOne does not support key 'extra'"
         );
 
-        for (int i = 0; i < operations.size(); i++) {
+        for (var i = 0; i < operations.size(); i++) {
             var input = new BufferedReader(new StringReader(operations.get(i)));
             var ex = assertThrows(
                 IllegalArgumentException.class,
@@ -662,6 +743,69 @@ class BulkTest extends MongoDbContainer {
         var e = assertThrows(RunnableTaskException.class, () -> bulk.run(runContext));
 
         assertThat(e.getMessage(), startsWith("Record 2 failed (1 record applied before it): E11000 duplicate key error"));
+    }
+
+    @Test
+    void invalidUpdateAndReplacementDocumentsFailWithLineNumber() {
+        var operations = List.of(
+            "{\"updateOne\": {\"filter\": {\"_id\": 1}, \"update\": {\"n\": 5}}}",
+            "{\"updateMany\": {\"filter\": {\"_id\": 1}, \"update\": {\"status\": \"done\"}}}",
+            "{\"updateOne\": {\"filter\": {\"_id\": 1}, \"update\": {}}}",
+            "{\"updateMany\": {\"filter\": {\"_id\": 1}, \"update\": {}}}",
+            "{\"replaceOne\": {\"filter\": {\"_id\": 1}, \"replacement\": {\"$set\": {\"a\": 1}}}}"
+        );
+
+        var expectedErrors = List.of(
+            "Invalid bulk request on line 1: updateOne update must only hold update operators such as $set, but 'n' does not start with '$': wrap the fields in $set, e.g. {\"$set\": {\"n\": ...}}, or use replaceOne to replace the whole document",
+            "Invalid bulk request on line 1: updateMany update must only hold update operators such as $set, but 'status' does not start with '$': wrap the fields in $set, e.g. {\"$set\": {\"status\": ...}}, or use replaceOne to replace the whole document",
+            "Invalid bulk request on line 1: updateOne update must not be empty: add at least one update operator such as {\"$set\": {\"field\": \"value\"}}",
+            "Invalid bulk request on line 1: updateMany update must not be empty: add at least one update operator such as {\"$set\": {\"field\": \"value\"}}",
+            "Invalid bulk request on line 1: replaceOne replacement must be a plain document without update operators, but '$set' starts with '$': use updateOne or updateMany for operators such as $set, or remove the '$' prefix from the field name"
+        );
+
+        for (var i = 0; i < operations.size(); i++) {
+            var input = new BufferedReader(new StringReader(operations.get(i)));
+            var ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> Flux.create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER)
+                    .count()
+                    .block()
+            );
+            assertThat(ex.getMessage(), is(expectedErrors.get(i)));
+        }
+    }
+
+    @Test
+    void replaceOneAllowsDbRefKeysInReplacementDocument() throws IOException {
+        var input = new BufferedReader(
+            new StringReader(
+                "{\"replaceOne\": {\"filter\": {\"_id\": 1}, \"replacement\": {\"$ref\": \"coll\", \"$id\": 1, \"$db\": \"db\"}}}"
+            )
+        );
+
+        var requests = Flux
+            .create(Bulk.builder().build().ndJSonReader(input), FluxSink.OverflowStrategy.BUFFER)
+            .collectList()
+            .block();
+
+        assertThat(requests, hasSize(1));
+    }
+
+    @Test
+    void driverValidationFailureDuringBulkRunReportsOffendingLineAndSendsNothing() throws Exception {
+        var database = newDatabase();
+        var ex = assertThrows(
+            RunnableTaskException.class,
+            () -> runBulk(
+                database, "driver_reject",
+                "{\"insertOne\": {\"document\": {\"_id\": 1, \"n\": 1}}}",
+                "{\"insertOne\": {\"document\": {\"_id\": 2, \"n\": 2}}}",
+                "{\"updateOne\": {\"filter\": {\"_id\": 1}, \"update\": {\"n\": 5}}}"
+            )
+        );
+
+        assertThat(ex.getMessage(), is("Invalid bulk request on line 3: updateOne update must only hold update operators such as $set, but 'n' does not start with '$': wrap the fields in $set, e.g. {\"$set\": {\"n\": ...}}, or use replaceOne to replace the whole document (0 records applied before it)"));
+        assertThat(findAll(database, "driver_reject"), hasSize(0));
     }
 
     private static List<Document> findAll(String database, String collection) {

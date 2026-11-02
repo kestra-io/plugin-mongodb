@@ -4,11 +4,14 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
+import java.math.BigInteger;
 import java.net.URI;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.IntStream;
 
 import org.bson.BsonDocument;
@@ -17,6 +20,7 @@ import org.bson.Document;
 import org.bson.types.ObjectId;
 import com.mongodb.client.model.Sorts;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 import com.google.common.collect.ImmutableMap;
 import com.mongodb.MongoBulkWriteException;
@@ -24,6 +28,11 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.model.CreateCollectionOptions;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.ValidationOptions;
+
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.AppenderBase;
 
 import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.property.Property;
@@ -33,6 +42,7 @@ import io.kestra.core.serializers.FileSerde;
 import io.kestra.core.storages.StorageInterface;
 import io.kestra.core.tenant.TenantService;
 import io.kestra.core.utils.IdUtils;
+import io.kestra.core.utils.Rethrow;
 
 import jakarta.inject.Inject;
 
@@ -41,6 +51,7 @@ import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.startsWith;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -127,7 +138,7 @@ class LoadTest extends MongoDbContainer {
                 .find()
                 .first();
 
-            assertThat(stored, is(org.hamcrest.Matchers.notNullValue()));
+            assertThat(stored, is(notNullValue()));
             assertThat(stored.get("_id"), is(expectedId));
             assertThat(stored.containsKey("id"), is(false));
             assertThat(stored.getString("name"), is("john"));
@@ -229,7 +240,7 @@ class LoadTest extends MongoDbContainer {
                 .find()
                 .first();
 
-            assertThat(stored, is(org.hamcrest.Matchers.notNullValue()));
+            assertThat(stored, is(notNullValue()));
             assertThat(stored.getObjectId("_id").getValue(), is(expectedId));
             assertThat(stored.containsKey("id"), is(false));
             assertThat(stored.get("createdAt").getBsonType(), is(BsonType.DATE_TIME));
@@ -237,6 +248,45 @@ class LoadTest extends MongoDbContainer {
             assertThat(stored.get("externalId").getBsonType(), is(BsonType.OBJECT_ID));
             assertThat(stored.getDocument("nested").get("count").getBsonType(), is(BsonType.INT64));
             assertThat(stored.getDocument("nested").getArray("ids").get(0).getBsonType(), is(BsonType.OBJECT_ID));
+        }
+    }
+
+    @Test
+    void runWithOffsetDateTimeAndBigIntegerInSecondRecord() throws Exception {
+        var database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        var expectedAmount = new BigInteger("1234567890123456789012345678901234");
+        var uri = put(
+            List.of(
+                Map.of("k", "first"),
+                Map.of(
+                    "k", "offset",
+                    "createdAt", OffsetDateTime.parse("2024-01-01T10:00:00+02:00"),
+                    "amount", expectedAmount
+                )
+            )
+        );
+        var load = load(database, "load_offset_datetime", uri).chunk(Property.ofValue(2)).build();
+        var runContext = runContextFactory.of();
+
+        var runOutput = load.run(runContext);
+
+        assertThat(runOutput.getSize(), is(2L));
+        assertThat(runOutput.getInsertedCount(), is(2));
+        assertThat(metric(runContext, "requests.count"), is(1D));
+
+        try (var client = getMongoClient()) {
+            var collection = client.getDatabase(database).getCollection("load_offset_datetime", BsonDocument.class);
+            assertThat(collection.countDocuments(), is(2L));
+
+            var first = collection.find(Filters.eq("k", "first")).first();
+            var second = collection.find(Filters.eq("k", "offset")).first();
+
+            assertThat(first, is(notNullValue()));
+            assertThat(second, is(notNullValue()));
+            assertThat(second.get("createdAt").getBsonType(), is(BsonType.DATE_TIME));
+            assertThat(second.getDateTime("createdAt").getValue(), is(1704096000000L));
+            assertThat(second.get("amount").getBsonType(), is(BsonType.DECIMAL128));
+            assertThat(second.getDecimal128("amount").getValue().bigDecimalValue().toBigIntegerExact(), is(expectedAmount));
         }
     }
 
@@ -343,6 +393,88 @@ class LoadTest extends MongoDbContainer {
         assertThat(e.getMessage(), startsWith("Record 1 failed (0 records applied before it): E11000 duplicate key error"));
         assertThat(((Load.Output) e.getOutput()).getInsertedCount(), is(0));
         assertThat(count(database, "retried"), is(2L));
+    }
+
+    @Test
+    void retryWithExistingIdAndMissingIdKeyFailsWithDuplicateKey() throws Exception {
+        var database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        var uri = put(
+            List.of(
+                Map.of("_id", 1, "name", "first"),
+                Map.of("_id", 2, "name", "second")
+            )
+        );
+        var load = load(database, "retried_existing_id", uri).idKey(Property.ofValue("externalId")).build();
+        var runOutput = load.run(runContextFactory.of());
+        assertThat(runOutput.getInsertedCount(), is(2));
+
+        var e = assertThrows(RunnableTaskException.class, () -> load.run(runContextFactory.of()));
+
+        assertThat(e.getMessage(), startsWith("Record 1 failed (0 records applied before it): E11000 duplicate key error"));
+        assertThat(((Load.Output) e.getOutput()).getInsertedCount(), is(0));
+        assertThat(count(database, "retried_existing_id"), is(2L));
+    }
+
+    @Test
+    void retryWithoutIdKeyInsertsRecordsWithoutIdAgain() throws Exception {
+        var database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        var uri = put(
+            List.of(
+                Map.of("name", "first"),
+                Map.of("name", "second")
+            )
+        );
+        var load = load(database, "retried_no_id", uri).build();
+        load.run(runContextFactory.of());
+
+        var secondRunOutput = load.run(runContextFactory.of());
+        assertThat(secondRunOutput.getInsertedCount(), is(2));
+        assertThat(count(database, "retried_no_id"), is(4L));
+    }
+
+    @Test
+    void idKeyMissingOnRecordsCarryingIdDoesNotWarn() throws Exception {
+        var database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        var uri = put(List.of(Map.of("_id", 1, "name", "first"), Map.of("_id", 2, "name", "second")));
+
+        var warnings = warningsDuring(() -> load(database, "idkey_with_id", uri).idKey(Property.ofValue("externalId")).build().run(runContextFactory.of()));
+
+        assertThat(warnings, is(List.of()));
+        assertThat(count(database, "idkey_with_id"), is(2L));
+    }
+
+    @Test
+    void idKeyMissingWarnsOnlyForRecordsWithoutId() throws Exception {
+        var database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        var uri = put(List.of(Map.of("_id", 1, "name", "first"), Map.of("name", "second"), Map.of("_id", 3, "name", "third"), Map.of("name", "fourth")));
+
+        var warnings = warningsDuring(() -> load(database, "idkey_mixed", uri).idKey(Property.ofValue("externalId")).build().run(runContextFactory.of()));
+
+        assertThat(warnings, is(List.of("Found 2 record(s) with missing or null 'externalId', generated an ObjectId for each.")));
+        assertThat(count(database, "idkey_mixed"), is(4L));
+    }
+
+    private static List<String> warningsDuring(Rethrow.RunnableChecked<Exception> action) throws Exception {
+        var logs = new CopyOnWriteArrayList<ILoggingEvent>();
+        var appender = new AppenderBase<ILoggingEvent>() {
+            @Override
+            protected void append(ILoggingEvent eventObject) {
+                logs.add(eventObject);
+            }
+        };
+        appender.start();
+        var root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+        root.addAppender(appender);
+        try {
+            action.run();
+        } finally {
+            root.detachAppender(appender);
+        }
+        return logs.stream()
+            .filter(event -> event.getLevel() == Level.WARN)
+            .map(ILoggingEvent::getFormattedMessage)
+            .filter(message -> message.contains("generated an ObjectId"))
+            .toList();
     }
 
     private URI put(List<Map<String, Object>> records) throws Exception {

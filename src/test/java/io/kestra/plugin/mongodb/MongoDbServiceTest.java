@@ -1,5 +1,6 @@
 package io.kestra.plugin.mongodb;
 
+import java.util.Map;
 import java.util.UUID;
 
 import org.bson.BsonBinary;
@@ -49,6 +50,23 @@ class MongoDbServiceTest {
         assertThat(
             MongoDbService.toIdString(new BsonBinary(new byte[] { 1, 2, 3 })),
             is("{\"$binary\": {\"base64\": \"AQID\", \"subType\": \"00\"}}")
+        );
+    }
+
+    @Test
+    void mapKeepsTheBinarySubtype() {
+        assertThat(MongoDbService.map(new BsonBinary(new byte[] { 1, 2, 3 })), is(new byte[] { 1, 2, 3 }));
+        assertThat(
+            MongoDbService.map(new BsonBinary(UUID_VALUE, UuidRepresentation.STANDARD)),
+            is(Map.of("$uuid", "3b241101-e2bb-4255-8caf-4136c566a962"))
+        );
+        assertThat(
+            MongoDbService.map(new BsonBinary(UUID_VALUE, UuidRepresentation.JAVA_LEGACY)),
+            is(Map.of("$binary", Map.of("base64", "VUK74gERJDtiqWbFNkGvjA==", "subType", "03")))
+        );
+        assertThat(
+            MongoDbService.map(new BsonBinary((byte) 0x80, new byte[] { 1, 2, 3 })),
+            is(Map.of("$binary", Map.of("base64", "AQID", "subType", "80")))
         );
     }
 
