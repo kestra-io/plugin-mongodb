@@ -7,6 +7,7 @@ import org.bson.BsonDocument;
 import org.bson.conversions.Bson;
 import org.slf4j.Logger;
 
+import com.mongodb.MongoException;
 import com.mongodb.MongoWriteConcernException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
@@ -34,7 +35,20 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @Schema(
     title = "Delete documents from MongoDB",
-    description = "Runs deleteOne (default) or deleteMany on a collection. Filter supports BSON strings or maps rendered from Flow variables."
+    description = """
+        Runs deleteOne (default) or deleteMany on a collection. Filter supports BSON strings or maps rendered from Flow variables.
+
+        ### Failures
+        `DELETE_MANY` is not atomic. The task fails with an unknown outcome, and some documents may already be deleted, when:
+        - MongoDB stops answering during the write, for example after a replica-set failover or a network error.
+        - `DELETE_MANY` stops at a failing document: the documents before it stay deleted.
+
+        `DELETE_ONE` fails with an unknown outcome in the first case. MongoDB returns no count in these cases, so the task reports no outputs or `deleted.count` metric. Errors raised before the delete is sent, such as an unreachable server, fail the task as usual: nothing was deleted.
+
+        Before retrying:
+        - `DELETE_MANY`: a retry with the same filter deletes only the documents that are left, so it is safe, but its `deletedCount` does not include the documents the failed attempt deleted.
+        - `DELETE_ONE`: a retry is safe only when the filter matches at most one document, for example on `_id`. Otherwise it can delete a second document.
+        """
 )
 @Plugin(
     examples = {
@@ -123,6 +137,23 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
                         .wasAcknowledged(true)
                         .deletedCount((long) e.getWriteResult().getCount())
                         .build()
+                );
+            } catch (MongoException e) {
+                var many = Operation.DELETE_MANY.equals(rOperation);
+                var cause = MongoDbService.unknownWriteOutcome(e, many);
+                if (cause == null) {
+                    throw e;
+                }
+
+                // no outputs or metrics: there is no count to report, and a zero would read as "nothing was deleted"
+                throw MongoDbService.unknownWriteOutcomeError(
+                    rOperation,
+                    cause,
+                    many ? "it's unknown how many documents were deleted" : "it's unknown whether the document was deleted",
+                    many
+                        ? "A retry with the same filter deletes only the documents that are left"
+                        : "Retry only if the filter matches at most one document, or the retry can delete a second one (see the task's Failures section)",
+                    e
                 );
             }
 

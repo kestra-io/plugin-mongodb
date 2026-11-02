@@ -1,7 +1,5 @@
 package io.kestra.plugin.mongodb;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Proxy;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -15,19 +13,12 @@ import com.mongodb.MongoSocketReadException;
 import com.mongodb.MongoTimeoutException;
 import com.mongodb.MongoWriteException;
 import com.mongodb.ServerAddress;
-import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
-import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
-import com.mongodb.event.CommandListener;
 
-import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.models.property.Property;
-import io.kestra.core.runners.RunContext;
 import io.kestra.core.utils.IdUtils;
-
-import lombok.experimental.SuperBuilder;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.empty;
@@ -84,9 +75,11 @@ class UpdateTest extends MongoDbContainer {
     @Test
     void updateManyStoppingAtAFailingDocumentHasAnUnknownCount() {
         var database = newDatabase();
-        MongoCollection<Document> collection = getMongoClient().getDatabase(database).getCollection("unique");
-        collection.createIndex(Indexes.ascending("code"), new IndexOptions().unique(true).sparse(true));
-        collection.insertMany(List.of(new Document("_id", 1), new Document("_id", 2), new Document("_id", 3)));
+        try (var client = getMongoClient()) {
+            MongoCollection<Document> collection = client.getDatabase(database).getCollection("unique");
+            collection.createIndex(Indexes.ascending("code"), new IndexOptions().unique(true).sparse(true));
+            collection.insertMany(List.of(new Document("_id", 1), new Document("_id", 2), new Document("_id", 3)));
+        }
 
         var e = assertThrows(IllegalStateException.class, () -> update(database, Update.Operation.UPDATE_MANY).run(runContextFactory.of()));
 
@@ -96,15 +89,19 @@ class UpdateTest extends MongoDbContainer {
         );
         assertThat(e.getCause() instanceof MongoWriteException, is(true));
         // the first document was updated before the duplicate key stopped the write
-        assertThat(collection.countDocuments(new Document("code", "same")), is(1L));
+        try (var client = getMongoClient()) {
+            assertThat(client.getDatabase(database).getCollection("unique").countDocuments(new Document("code", "same")), is(1L));
+        }
     }
 
     @Test
     void updateOneWriteErrorIsDefinite() {
         var database = newDatabase();
-        MongoCollection<Document> collection = getMongoClient().getDatabase(database).getCollection("unique");
-        collection.createIndex(Indexes.ascending("code"), new IndexOptions().unique(true).sparse(true));
-        collection.insertMany(List.of(new Document("_id", 1).append("code", "same"), new Document("_id", 2)));
+        try (var client = getMongoClient()) {
+            MongoCollection<Document> collection = client.getDatabase(database).getCollection("unique");
+            collection.createIndex(Indexes.ascending("code"), new IndexOptions().unique(true).sparse(true));
+            collection.insertMany(List.of(new Document("_id", 1).append("code", "same"), new Document("_id", 2)));
+        }
 
         var task = Update.builder()
             .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
@@ -131,7 +128,7 @@ class UpdateTest extends MongoDbContainer {
 
     private Update failingUpdate(MongoException failure, Update.Operation operation) {
         return Update.builder()
-            .connection(FailingUpdateConnection.builder().uri(Property.ofValue(connectionUri)).failure(failure).build())
+            .connection(FailingWriteConnection.builder().uri(Property.ofValue(connectionUri)).failure(failure).build())
             .database(Property.ofValue(newDatabase()))
             .collection(Property.ofValue("failing"))
             .operation(Property.ofValue(operation))
@@ -142,46 +139,5 @@ class UpdateTest extends MongoDbContainer {
 
     private static String newDatabase() {
         return "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
-    }
-
-    // throws the given error from every update call; overriding Update would register a plugin
-    @SuperBuilder
-    private static class FailingUpdateConnection extends MongoDbConnection {
-        private final MongoException failure;
-
-        @Override
-        MongoClient client(RunContext runContext, CommandListener listener) throws IllegalVariableEvaluationException {
-            return failUpdates(super.client(runContext, listener), MongoClient.class, failure);
-        }
-
-        // proxies the client, and the databases and collections it returns, down to the update calls
-        @SuppressWarnings({"unchecked", "rawtypes"})
-        private static <T> T failUpdates(T target, Class<T> type, MongoException failure) {
-            return type.cast(Proxy.newProxyInstance(
-                type.getClassLoader(),
-                new Class<?>[] {type},
-                (proxy, method, args) ->
-                {
-                    if (List.of("updateOne", "updateMany", "replaceOne").contains(method.getName())) {
-                        throw failure;
-                    }
-
-                    Object result;
-                    try {
-                        result = method.invoke(target, args);
-                    } catch (InvocationTargetException e) {
-                        throw e.getCause();
-                    }
-
-                    if (result instanceof MongoDatabase database) {
-                        return failUpdates(database, MongoDatabase.class, failure);
-                    }
-                    if (result instanceof MongoCollection collection) {
-                        return failUpdates(collection, (Class) MongoCollection.class, failure);
-                    }
-                    return result;
-                }
-            ));
-        }
     }
 }

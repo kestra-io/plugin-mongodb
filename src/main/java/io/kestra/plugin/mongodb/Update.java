@@ -6,13 +6,7 @@ import org.bson.conversions.Bson;
 import org.slf4j.Logger;
 
 import com.mongodb.MongoException;
-import com.mongodb.MongoNodeIsRecoveringException;
-import com.mongodb.MongoNotPrimaryException;
-import com.mongodb.MongoOperationTimeoutException;
-import com.mongodb.MongoSocketException;
-import com.mongodb.MongoSocketOpenException;
 import com.mongodb.MongoWriteConcernException;
-import com.mongodb.MongoWriteException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.result.UpdateResult;
@@ -187,21 +181,18 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
                         .build()
                 );
             } catch (MongoException e) {
-                var cause = unknownOutcome(rOperation, e);
+                var many = Operation.UPDATE_MANY.equals(rOperation);
+                var cause = MongoDbService.unknownWriteOutcome(e, many);
                 if (cause == null) {
                     throw e;
                 }
 
                 // no outputs or metrics: there is no count to report, and a zero would read as "nothing was applied"
-                throw new IllegalStateException(
-                    "The %s failed %s, so %s. Check that the update is safe to apply twice before retrying (see the task's Failures section): %s".formatted(
-                        rOperation,
-                        cause,
-                        Operation.UPDATE_MANY.equals(rOperation)
-                            ? "it's unknown how many documents were updated; some may have been modified"
-                            : "it's unknown whether the document was updated",
-                        e.getMessage()
-                    ),
+                throw MongoDbService.unknownWriteOutcomeError(
+                    rOperation,
+                    cause,
+                    many ? "it's unknown how many documents were updated; some may have been modified" : "it's unknown whether the document was updated",
+                    "Check that the update is safe to apply twice before retrying (see the task's Failures section)",
                     e
                 );
             }
@@ -228,34 +219,6 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
                 .modifiedCount(acknowledged ? updateResult.getModifiedCount() : null)
                 .build();
         }
-    }
-
-    /**
-     * Says why the outcome of a failed write is unknown, or returns null when the error is definite.
-     * A failover or a network error during the write ends it without an answer, and {@code updateMany} stopping at a
-     * failing document keeps the documents updated before it; errors raised before the write was sent wrote nothing.
-     */
-    @Nullable
-    static String unknownOutcome(Operation operation, MongoException e) {
-        // the driver labels a failure where it knows nothing was sent, such as after a failed retry
-        if (e.hasErrorLabel("NoWritesPerformed") || e instanceof MongoSocketOpenException) {
-            return null;
-        }
-
-        if (e instanceof MongoSocketException
-            || e instanceof MongoOperationTimeoutException
-            || e instanceof MongoNotPrimaryException
-            || e instanceof MongoNodeIsRecoveringException) {
-            // other MongoTimeoutExceptions come from server selection or the connection pool, before the write is sent
-            return "before MongoDB confirmed it";
-        }
-
-        // UPDATE_ONE and REPLACE_ONE touch one document atomically, so their write errors are definite
-        if (Operation.UPDATE_MANY.equals(operation) && e instanceof MongoWriteException) {
-            return "when MongoDB stopped at a failing document";
-        }
-
-        return null;
     }
 
     public enum Operation {
