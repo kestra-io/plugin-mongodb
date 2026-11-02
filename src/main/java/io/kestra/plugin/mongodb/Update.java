@@ -5,6 +5,7 @@ import org.bson.BsonDocument;
 import org.bson.conversions.Bson;
 import org.slf4j.Logger;
 
+import com.mongodb.MongoException;
 import com.mongodb.MongoWriteConcernException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
@@ -33,7 +34,13 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @Schema(
     title = "Update or replace MongoDB documents",
-    description = "Runs MongoDB replaceOne, updateOne, or updateMany on a collection. Defaults to UPDATE_ONE; both filter and document accept BSON maps or strings and are rendered from Flow variables. Requires write access; upserts are not exposed."
+    description = """
+        Runs MongoDB replaceOne, updateOne, or updateMany on a collection. Defaults to UPDATE_ONE; both filter and document accept BSON maps or strings and are rendered from Flow variables. Requires write access; upserts are not exposed.
+
+        ### Failures
+        `UPDATE_MANY` is not atomic: if it fails mid-write (failover, network error, or a failing document such as a duplicate key), some documents may already be updated and the task reports no count.
+        Before retrying, check the update is safe to apply twice: `$inc`, `$push` and `$mul` apply again, and an update that changes a field the filter matches on reaches other documents. To make a retry safe, add `"batchId": {"$ne": "{{ execution.id }}"}` to the filter and set `"batchId": "{{ execution.id }}"`.
+        """
 )
 @Plugin(
     examples = {
@@ -162,6 +169,21 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
                         .matchedCount((long) writeConcernResult.getCount())
                         .upsertedId(writeConcernResult.getUpsertedId() != null ? MongoDbService.toIdString(writeConcernResult.getUpsertedId()) : null)
                         .build()
+                );
+            } catch (MongoException e) {
+                var many = Operation.UPDATE_MANY.equals(rOperation);
+                var cause = MongoDbService.unknownWriteOutcome(e, many);
+                if (cause == null) {
+                    throw e;
+                }
+
+                // no outputs or metrics: there is no count to report, and a zero would read as "nothing was applied"
+                throw MongoDbService.unknownWriteOutcomeError(
+                    rOperation,
+                    cause,
+                    many ? "it's unknown how many documents were updated; some may have been modified" : "it's unknown whether the document was updated",
+                    "Check that the update is safe to apply twice before retrying (see the task's Failures section)",
+                    e
                 );
             }
 
