@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.IntStream;
 
 import org.bson.BsonDocument;
@@ -31,7 +32,7 @@ import com.mongodb.client.model.ValidationOptions;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
+import ch.qos.logback.core.AppenderBase;
 
 import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.property.Property;
@@ -453,7 +454,13 @@ class LoadTest extends MongoDbContainer {
     }
 
     private static List<String> warningsDuring(ThrowingRunnable action) throws Exception {
-        var appender = new ListAppender<ILoggingEvent>();
+        var logs = new CopyOnWriteArrayList<ILoggingEvent>();
+        var appender = new AppenderBase<ILoggingEvent>() {
+            @Override
+            protected void append(ILoggingEvent eventObject) {
+                logs.add(eventObject);
+            }
+        };
         appender.start();
         var root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
         root.addAppender(appender);
@@ -462,7 +469,7 @@ class LoadTest extends MongoDbContainer {
         } finally {
             root.detachAppender(appender);
         }
-        return appender.list.stream()
+        return logs.stream()
             .filter(event -> event.getLevel() == Level.WARN)
             .map(ILoggingEvent::getFormattedMessage)
             .filter(message -> message.contains("generated an ObjectId"))

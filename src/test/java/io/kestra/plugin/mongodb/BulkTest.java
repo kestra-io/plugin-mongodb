@@ -675,11 +675,11 @@ class BulkTest extends MongoDbContainer {
         );
 
         var expectedErrors = List.of(
-            "Invalid bulk request on line 1: updateOne update must only hold update operators such as $set, but 'n' does not start with '$': wrap the fields in $set, e.g. {\"$set\": {\"n\": ...}}, or use replaceOne to replace the whole document",
-            "Invalid bulk request on line 1: updateMany update must only hold update operators such as $set, but 'status' does not start with '$': wrap the fields in $set, e.g. {\"$set\": {\"status\": ...}}, or use replaceOne to replace the whole document",
-            "Invalid bulk request on line 1: updateOne update must not be empty: add at least one update operator such as {\"$set\": {\"field\": \"value\"}}",
-            "Invalid bulk request on line 1: updateMany update must not be empty: add at least one update operator such as {\"$set\": {\"field\": \"value\"}}",
-            "Invalid bulk request on line 1: replaceOne replacement must be a plain document without update operators, but '$set' starts with '$': use updateOne or updateMany for operators such as $set, or remove the '$' prefix from the field name"
+            "Invalid bulk request on line 1: deleteOne requires a 'filter' document",
+            "Invalid bulk request on line 1: deleteMany requires a 'filter' document",
+            "Invalid bulk request on line 1: updateOne requires an 'update' document",
+            "Invalid bulk request on line 1: updateMany requires an 'update' document",
+            "Invalid bulk request on line 1: replaceOne requires a 'replacement' document"
         );
 
         for (var i = 0; i < operations.size(); i++) {
@@ -756,11 +756,11 @@ class BulkTest extends MongoDbContainer {
         );
 
         var expectedErrors = List.of(
-            "Invalid bulk request on line 1: All update operators must start with '$', but 'n' does not",
-            "Invalid bulk request on line 1: All update operators must start with '$', but 'status' does not",
-            "Invalid bulk request on line 1: Invalid BSON document for an update. The document may not be empty.",
-            "Invalid bulk request on line 1: Invalid BSON document for an update. The document may not be empty.",
-            "Invalid bulk request on line 1: Field names in a replacement document can not start with '$' but '$set' does"
+            "Invalid bulk request on line 1: updateOne update must only hold update operators such as $set, but 'n' does not start with '$': wrap the fields in $set, e.g. {\"$set\": {\"n\": ...}}, or use replaceOne to replace the whole document",
+            "Invalid bulk request on line 1: updateMany update must only hold update operators such as $set, but 'status' does not start with '$': wrap the fields in $set, e.g. {\"$set\": {\"status\": ...}}, or use replaceOne to replace the whole document",
+            "Invalid bulk request on line 1: updateOne update must not be empty: add at least one update operator such as {\"$set\": {\"field\": \"value\"}}",
+            "Invalid bulk request on line 1: updateMany update must not be empty: add at least one update operator such as {\"$set\": {\"field\": \"value\"}}",
+            "Invalid bulk request on line 1: replaceOne replacement must be a plain document without update operators, but '$set' starts with '$': use updateOne or updateMany for operators such as $set, or remove the '$' prefix from the field name"
         );
 
         for (var i = 0; i < operations.size(); i++) {

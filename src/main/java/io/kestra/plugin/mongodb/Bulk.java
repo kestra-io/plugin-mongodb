@@ -44,7 +44,8 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
     title = "Run MongoDB bulkWrite from NDJSON",
     description = """
         Reads newline-delimited bulk operations from internal storage and executes MongoDB bulkWrite.
-        Supports insertOne, updateOne, updateMany, replaceOne, deleteOne and deleteMany in the db.collection.bulkWrite() format (https://www.mongodb.com/docs/manual/reference/method/db.collection.bulkWrite/). insertOne also accepts the legacy flat form where the body is the document itself; a body whose only field is an object named `document` is read as the bulkWrite form.
+        Supports insertOne, updateOne, updateMany, replaceOne, deleteOne and deleteMany in the db.collection.bulkWrite() format (https://www.mongodb.com/docs/manual/reference/method/db.collection.bulkWrite/).
+        insertOne also accepts the legacy flat form where the body is the document itself; a body whose only field is an object named `document` is read as the bulkWrite form.
         Blank and whitespace-only lines are skipped.
         Delete, update and replace operations support `collation` and `hint`.
         Inherits chunking from AbstractLoad (default 1000 per bulk request).
