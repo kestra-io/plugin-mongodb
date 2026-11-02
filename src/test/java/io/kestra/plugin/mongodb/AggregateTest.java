@@ -7,6 +7,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.bson.BsonDocument;
 import org.bson.Document;
+import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -468,6 +469,27 @@ class AggregateTest extends MongoDbContainer {
         assertThat(output.getRows(), is(nullValue()));
         assertThat(output.getRow(), instanceOf(Map.class));
         assertThat(((Map<String, Object>) output.getRow()).get("_id"), is(1));
+    }
+
+    @Test
+    void extendedJsonObjectIdsWrapObjectIds() throws Exception {
+        var id = new ObjectId();
+        try (MongoClient client = MongoClients.create(connectionUri)) {
+            client.getDatabase(DATABASE_NAME).getCollection(COLLECTION_NAME)
+                .insertOne(new Document("_id", id).append("marker", "extended-json"));
+        }
+
+        var output = Aggregate.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
+            .database(Property.ofValue(DATABASE_NAME))
+            .collection(Property.ofValue(COLLECTION_NAME))
+            .pipeline(Property.ofValue(List.of(Map.of("$match", Map.of("marker", "extended-json")))))
+            .objectIdFormat(Property.ofValue(MongoDbService.ObjectIdFormat.EXTENDED_JSON))
+            .build()
+            .run(runContextFactory.of());
+
+        assertThat(output.getSize(), is(1L));
+        assertThat(((Map<String, Object>) output.getRows().get(0)).get("_id"), is(Map.of("$oid", id.toHexString())));
     }
 
     @Test

@@ -175,7 +175,11 @@ public class Aggregate extends AbstractTask implements RunnableTask<Aggregate.Ou
 
     @Schema(
         title = "ObjectId format",
-        description = "HEX returns ObjectIds as bare hex strings, as before. EXTENDED_JSON returns them as $oid wrappers, which Load writes back as ObjectIds. Defaults to HEX."
+        description = """
+            HEX returns ObjectIds as bare hex strings, as before. EXTENDED_JSON returns them as $oid wrappers, which Load writes back as ObjectIds, so an Aggregate with store: STORE followed by Load keeps the type.
+            Under EXTENDED_JSON, rows[0]._id becomes a map with $oid, for example {"$oid": "60930c39a982931c20ef6cd6"}.
+            Defaults to HEX.
+            """
     )
     @Builder.Default
     @PluginProperty(group = "processing")

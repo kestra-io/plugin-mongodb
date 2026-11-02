@@ -146,16 +146,18 @@ class BsonTypesTest extends MongoDbContainer {
 
     @Test
     void triggerWithExtendedJsonObjectIdsWrapsObjectIds() throws Exception {
+        var triggerId = IdUtils.create();
         var trigger = Trigger.builder()
-            .id("watch")
+            .id(triggerId)
             .type(Trigger.class.getName())
             .connection(connection())
             .database(Property.ofValue(this.database))
             .collection(Property.ofValue(COLLECTION))
             .objectIdFormat(Property.ofValue(MongoDbService.ObjectIdFormat.EXTENDED_JSON))
             .build();
+        var flowId = IdUtils.create();
         var flow = Flow.builder()
-            .id("bson-types-extended")
+            .id(flowId)
             .namespace("io.kestra.tests")
             .tenantId(TenantService.MAIN_TENANT)
             .revision(1)
@@ -164,8 +166,8 @@ class BsonTypesTest extends MongoDbContainer {
         var triggerContext = TriggerContext.builder()
             .tenantId(TenantService.MAIN_TENANT)
             .namespace("io.kestra.tests")
-            .flowId("bson-types-extended")
-            .triggerId("watch")
+            .flowId(flowId)
+            .triggerId(triggerId)
             .date(ZonedDateTime.now())
             .build();
         RunContext runContext = runContextFactory.initializer()

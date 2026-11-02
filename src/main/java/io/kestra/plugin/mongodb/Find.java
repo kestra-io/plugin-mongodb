@@ -155,7 +155,11 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
 
     @Schema(
         title = "ObjectId format",
-        description = "HEX returns ObjectIds as bare hex strings, as before. EXTENDED_JSON returns them as $oid wrappers, which Load writes back as ObjectIds, so a Find with store: true followed by Load keeps the type. Defaults to HEX."
+        description = """
+            HEX returns ObjectIds as bare hex strings, as before. EXTENDED_JSON returns them as $oid wrappers, which Load writes back as ObjectIds, so a Find with store: true followed by Load keeps the type.
+            Under EXTENDED_JSON, rows[0]._id becomes a map with $oid, for example {"$oid": "60930c39a982931c20ef6cd6"}.
+            Defaults to HEX.
+            """
     )
     @Builder.Default
     @PluginProperty(group = "processing")
