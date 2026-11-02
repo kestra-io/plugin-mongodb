@@ -76,6 +76,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
             var progress = new Progress(collection.getWriteConcern().isAcknowledged());
 
             Flux<BulkWriteResult> flowable = this.source(runContext, inputStream)
+                .onErrorMap(e -> new ReadFailure(e))
                 .doOnNext(docWriteRequest ->
                 {
                     count.incrementAndGet();
@@ -94,6 +95,14 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
                 // the failed task keeps the outputs, so they show what was applied before the failure
                 metrics(runContext, collection, progress.requests, progress.applied);
                 throw new RunnableTaskException(e.getMessage(), e.getCause(), progress.output(progress.applied));
+            } catch (ReadFailure e) {
+                var original = e.getCause();
+                metrics(runContext, collection, progress.requests, progress.applied);
+                throw new RunnableTaskException(
+                    original.getMessage() + " (" + Progress.count(progress.applied) + " applied before it)",
+                    original.getCause(),
+                    progress.output(progress.applied)
+                );
             } catch (RuntimeException e) {
                 metrics(runContext, collection, progress.requests, progress.applied);
                 throw e;
@@ -212,7 +221,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
             return first == last ? "record " + first : "records " + first + " to " + last;
         }
 
-        private static String count(long records) {
+        static String count(long records) {
             return records == 1 ? "1 record" : records + " records";
         }
     }
@@ -220,6 +229,12 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
     private static class WriteFailure extends RuntimeException {
         WriteFailure(String message, Throwable cause) {
             super(message, cause);
+        }
+    }
+
+    private static class ReadFailure extends RuntimeException {
+        ReadFailure(Throwable cause) {
+            super(cause);
         }
     }
 

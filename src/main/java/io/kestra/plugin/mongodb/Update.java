@@ -5,6 +5,7 @@ import org.bson.BsonDocument;
 import org.bson.conversions.Bson;
 import org.slf4j.Logger;
 
+import com.mongodb.MongoWriteConcernException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.result.UpdateResult;
@@ -16,6 +17,7 @@ import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.RunnableTask;
+import io.kestra.core.models.tasks.RunnableTaskException;
 import io.kestra.core.runners.RunContext;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -141,12 +143,26 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
             MongoCollection<Bson> collection = this.collection(runContext, client);
 
             UpdateResult updateResult;
-            if (Operation.REPLACE_ONE.equals(rOperation)) {
-                updateResult = collection.replaceOne(bsonFilter, bsonDocument);
-            } else if (Operation.UPDATE_ONE.equals(rOperation)) {
-                updateResult = collection.updateOne(bsonFilter, bsonDocument);
-            } else {
-                updateResult = collection.updateMany(bsonFilter, bsonDocument);
+            try {
+                if (Operation.REPLACE_ONE.equals(rOperation)) {
+                    updateResult = collection.replaceOne(bsonFilter, bsonDocument);
+                } else if (Operation.UPDATE_ONE.equals(rOperation)) {
+                    updateResult = collection.updateOne(bsonFilter, bsonDocument);
+                } else {
+                    updateResult = collection.updateMany(bsonFilter, bsonDocument);
+                }
+            } catch (MongoWriteConcernException e) {
+                // applied on the primary, only the write concern failed; WriteConcernResult has no nModified, so modifiedCount stays null (see AbstractLoad)
+                var writeConcernResult = e.getWriteResult();
+                throw new RunnableTaskException(
+                    MongoDbService.writeConcernErrorMessage(e),
+                    e,
+                    Output.builder()
+                        .wasAcknowledged(true)
+                        .matchedCount((long) writeConcernResult.getCount())
+                        .upsertedId(writeConcernResult.getUpsertedId() != null ? MongoDbService.toIdString(writeConcernResult.getUpsertedId()) : null)
+                        .build()
+                );
             }
 
             logger.debug("Updating doc: {} with filter: {}", bsonDocument, bsonFilter);
@@ -210,7 +226,9 @@ public class Update extends AbstractTask implements RunnableTask<Update.Output> 
 
         @Schema(
             title = "The number of documents modified by the update",
-            description = "Null for unacknowledged writes (`w=0`), which have no counts to report."
+            description = """
+                Null for unacknowledged writes (`w=0`), which have no counts to report, and on a write concern error,
+                where the driver reports only a matched count and not how many documents were modified."""
         )
         private final Long modifiedCount;
     }

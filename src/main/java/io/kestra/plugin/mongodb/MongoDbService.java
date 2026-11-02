@@ -3,6 +3,7 @@ package io.kestra.plugin.mongodb;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.AbstractMap;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -11,6 +12,7 @@ import java.util.stream.Collectors;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mongodb.MongoWriteConcernException;
 import org.bson.BsonBinarySubType;
 import org.bson.BsonDocument;
 import org.bson.BsonObjectId;
@@ -55,7 +57,7 @@ public abstract class MongoDbService {
 
     // add the _id before the driver does: with MongoCollection<Bson> it fails when the last field name written is a nested _id
     public static <T extends Map<String, ? super BsonObjectId>> T withId(T document) {
-        if (!document.containsKey("_id")) {
+        if (document.get("_id") == null) {
             document.put("_id", new BsonObjectId());
         }
 
@@ -65,6 +67,12 @@ public abstract class MongoDbService {
     static List<Map<String, Object>> readMapList(String json) throws IOException {
         return JSON_WITH_NULL_MAP_ENTRIES.readValue(json, new TypeReference<>() {
         });
+    }
+
+    // the write was applied on the primary but the requested write concern was not met; this is not always a
+    // timeout, e.g. "Not enough data-bearing nodes" on a single-member replica set, so the wording stays neutral
+    static String writeConcernErrorMessage(MongoWriteConcernException e) {
+        return "MongoDB reported a write concern error; the write was applied on the primary but may not be durable: " + e.getMessage();
     }
 
     public static String toIdString(BsonValue id) {
@@ -117,8 +125,6 @@ public abstract class MongoDbService {
 
             case STRING:
                 return doc.asString().getValue();
-            case BINARY:
-                return doc.asBinary().getData();
 
             case BOOLEAN:
                 return doc.asBoolean().getValue();
@@ -157,6 +163,22 @@ public abstract class MongoDbService {
                 return objectIdFormat == ObjectIdFormat.EXTENDED_JSON
                     ? document("$oid", doc.asObjectId().getValue().toHexString())
                     : doc.asObjectId().getValue().toHexString();
+            case BINARY: {
+                var binary = doc.asBinary();
+                if (binary.getType() == BsonBinarySubType.BINARY.getValue()) {
+                    return binary.getData();
+                }
+                if (binary.getType() == BsonBinarySubType.UUID_STANDARD.getValue() && binary.getData().length == 16) {
+                    return document("$uuid", binary.asUuid().toString());
+                }
+                return document(
+                    "$binary",
+                    document(
+                        "base64", Base64.getEncoder().encodeToString(binary.getData()),
+                        "subType", "%02x".formatted(binary.getType() & 0xFF)
+                    )
+                );
+            }
             case TIMESTAMP:
                 // seconds and increment are unsigned 32-bit values
                 return document(
