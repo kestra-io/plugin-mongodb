@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.IntStream;
 
 import org.bson.BsonDocument;
@@ -19,6 +20,7 @@ import org.bson.Document;
 import org.bson.types.ObjectId;
 import com.mongodb.client.model.Sorts;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 import com.google.common.collect.ImmutableMap;
 import com.mongodb.MongoBulkWriteException;
@@ -26,6 +28,11 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.model.CreateCollectionOptions;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.ValidationOptions;
+
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.AppenderBase;
 
 import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.property.Property;
@@ -35,6 +42,7 @@ import io.kestra.core.serializers.FileSerde;
 import io.kestra.core.storages.StorageInterface;
 import io.kestra.core.tenant.TenantService;
 import io.kestra.core.utils.IdUtils;
+import io.kestra.core.utils.Rethrow;
 
 import jakarta.inject.Inject;
 
@@ -385,6 +393,88 @@ class LoadTest extends MongoDbContainer {
         assertThat(e.getMessage(), startsWith("Record 1 failed (0 records applied before it): E11000 duplicate key error"));
         assertThat(((Load.Output) e.getOutput()).getInsertedCount(), is(0));
         assertThat(count(database, "retried"), is(2L));
+    }
+
+    @Test
+    void retryWithExistingIdAndMissingIdKeyFailsWithDuplicateKey() throws Exception {
+        var database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        var uri = put(
+            List.of(
+                Map.of("_id", 1, "name", "first"),
+                Map.of("_id", 2, "name", "second")
+            )
+        );
+        var load = load(database, "retried_existing_id", uri).idKey(Property.ofValue("externalId")).build();
+        var runOutput = load.run(runContextFactory.of());
+        assertThat(runOutput.getInsertedCount(), is(2));
+
+        var e = assertThrows(RunnableTaskException.class, () -> load.run(runContextFactory.of()));
+
+        assertThat(e.getMessage(), startsWith("Record 1 failed (0 records applied before it): E11000 duplicate key error"));
+        assertThat(((Load.Output) e.getOutput()).getInsertedCount(), is(0));
+        assertThat(count(database, "retried_existing_id"), is(2L));
+    }
+
+    @Test
+    void retryWithoutIdKeyInsertsRecordsWithoutIdAgain() throws Exception {
+        var database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        var uri = put(
+            List.of(
+                Map.of("name", "first"),
+                Map.of("name", "second")
+            )
+        );
+        var load = load(database, "retried_no_id", uri).build();
+        load.run(runContextFactory.of());
+
+        var secondRunOutput = load.run(runContextFactory.of());
+        assertThat(secondRunOutput.getInsertedCount(), is(2));
+        assertThat(count(database, "retried_no_id"), is(4L));
+    }
+
+    @Test
+    void idKeyMissingOnRecordsCarryingIdDoesNotWarn() throws Exception {
+        var database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        var uri = put(List.of(Map.of("_id", 1, "name", "first"), Map.of("_id", 2, "name", "second")));
+
+        var warnings = warningsDuring(() -> load(database, "idkey_with_id", uri).idKey(Property.ofValue("externalId")).build().run(runContextFactory.of()));
+
+        assertThat(warnings, is(List.of()));
+        assertThat(count(database, "idkey_with_id"), is(2L));
+    }
+
+    @Test
+    void idKeyMissingWarnsOnlyForRecordsWithoutId() throws Exception {
+        var database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        var uri = put(List.of(Map.of("_id", 1, "name", "first"), Map.of("name", "second"), Map.of("_id", 3, "name", "third"), Map.of("name", "fourth")));
+
+        var warnings = warningsDuring(() -> load(database, "idkey_mixed", uri).idKey(Property.ofValue("externalId")).build().run(runContextFactory.of()));
+
+        assertThat(warnings, is(List.of("Found 2 record(s) with missing or null 'externalId', generated an ObjectId for each.")));
+        assertThat(count(database, "idkey_mixed"), is(4L));
+    }
+
+    private static List<String> warningsDuring(Rethrow.RunnableChecked<Exception> action) throws Exception {
+        var logs = new CopyOnWriteArrayList<ILoggingEvent>();
+        var appender = new AppenderBase<ILoggingEvent>() {
+            @Override
+            protected void append(ILoggingEvent eventObject) {
+                logs.add(eventObject);
+            }
+        };
+        appender.start();
+        var root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+        root.addAppender(appender);
+        try {
+            action.run();
+        } finally {
+            root.detachAppender(appender);
+        }
+        return logs.stream()
+            .filter(event -> event.getLevel() == Level.WARN)
+            .map(ILoggingEvent::getFormattedMessage)
+            .filter(message -> message.contains("generated an ObjectId"))
+            .toList();
     }
 
     private URI put(List<Map<String, Object>> records) throws Exception {
