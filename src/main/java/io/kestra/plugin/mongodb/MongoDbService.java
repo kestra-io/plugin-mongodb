@@ -12,7 +12,14 @@ import java.util.stream.Collectors;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mongodb.MongoException;
+import com.mongodb.MongoNodeIsRecoveringException;
+import com.mongodb.MongoNotPrimaryException;
+import com.mongodb.MongoOperationTimeoutException;
+import com.mongodb.MongoSocketException;
+import com.mongodb.MongoSocketOpenException;
 import com.mongodb.MongoWriteConcernException;
+import com.mongodb.MongoWriteException;
 import org.bson.BsonBinarySubType;
 import org.bson.BsonDocument;
 import org.bson.BsonObjectId;
@@ -64,6 +71,46 @@ public abstract class MongoDbService {
     // timeout, e.g. "Not enough data-bearing nodes" on a single-member replica set, so the wording stays neutral
     static String writeConcernErrorMessage(MongoWriteConcernException e) {
         return "MongoDB reported a write concern error; the write was applied on the primary but may not be durable: " + e.getMessage();
+    }
+
+    /**
+     * Says why the outcome of a failed write is unknown, or returns null when the error is definite.
+     * A failover or a network error during the write ends it without an answer, and a multi-document write
+     * stopping at a failing document keeps the documents written before it; errors raised before the write was
+     * sent wrote nothing.
+     *
+     * @param many whether the write touches several documents, so that it can stop part way
+     */
+    static String unknownWriteOutcome(MongoException e, boolean many) {
+        // the driver labels a failure where it knows nothing was sent, such as after a failed retry
+        if (e.hasErrorLabel("NoWritesPerformed") || e instanceof MongoSocketOpenException) {
+            return null;
+        }
+
+        if (e instanceof MongoSocketException
+            || e instanceof MongoOperationTimeoutException
+            || e instanceof MongoNotPrimaryException
+            || e instanceof MongoNodeIsRecoveringException) {
+            // other MongoTimeoutExceptions come from server selection or the connection pool, before the write is sent
+            return "before MongoDB confirmed it";
+        }
+
+        // a single-document write is atomic, so its write errors are definite
+        if (many && e instanceof MongoWriteException) {
+            return "when MongoDB stopped at a failing document";
+        }
+
+        return null;
+    }
+
+    /**
+     * The error for a write whose outcome is unknown, keeping the driver error as its cause.
+     *
+     * @param unknown what is unknown, e.g. "it's unknown whether the document was updated"
+     * @param retry what the user should know before retrying
+     */
+    static IllegalStateException unknownWriteOutcomeError(Enum<?> operation, String cause, String unknown, String retry, MongoException e) {
+        return new IllegalStateException("The %s failed %s, so %s. %s: %s".formatted(operation, cause, unknown, retry, e.getMessage()), e);
     }
 
     public static String toIdString(BsonValue id) {

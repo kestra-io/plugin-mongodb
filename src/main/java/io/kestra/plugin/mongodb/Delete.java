@@ -7,6 +7,7 @@ import org.bson.BsonDocument;
 import org.bson.conversions.Bson;
 import org.slf4j.Logger;
 
+import com.mongodb.MongoException;
 import com.mongodb.MongoWriteConcernException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
@@ -34,7 +35,12 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @Schema(
     title = "Delete documents from MongoDB",
-    description = "Runs deleteOne (default) or deleteMany on a collection. Filter supports BSON strings or maps rendered from Flow variables."
+    description = """
+        Runs deleteOne (default) or deleteMany on a collection. Filter supports BSON strings or maps rendered from Flow variables.
+
+        ### Failures
+        `DELETE_MANY` is not atomic: if it fails mid-write, some documents may already be deleted and the task reports no count. A retry with the same filter deletes the rest. Retry a `DELETE_ONE` only when its filter matches a single document, such as on `_id`.
+        """
 )
 @Plugin(
     examples = {
@@ -123,6 +129,23 @@ public class Delete extends AbstractTask implements RunnableTask<Delete.Output> 
                         .wasAcknowledged(true)
                         .deletedCount((long) e.getWriteResult().getCount())
                         .build()
+                );
+            } catch (MongoException e) {
+                var many = Operation.DELETE_MANY.equals(rOperation);
+                var cause = MongoDbService.unknownWriteOutcome(e, many);
+                if (cause == null) {
+                    throw e;
+                }
+
+                // no outputs or metrics: there is no count to report, and a zero would read as "nothing was deleted"
+                throw MongoDbService.unknownWriteOutcomeError(
+                    rOperation,
+                    cause,
+                    many ? "it's unknown how many documents were deleted" : "it's unknown whether the document was deleted",
+                    many
+                        ? "A retry with the same filter deletes only the documents that are left"
+                        : "Retry only if the filter matches at most one document, or the retry can delete a second one (see the task's Failures section)",
+                    e
                 );
             }
 
