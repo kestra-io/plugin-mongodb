@@ -3,6 +3,7 @@ package io.kestra.plugin.mongodb;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.AbstractMap;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -115,8 +116,6 @@ public abstract class MongoDbService {
 
             case STRING:
                 return doc.asString().getValue();
-            case BINARY:
-                return doc.asBinary().getData();
 
             case BOOLEAN:
                 return doc.asBoolean().getValue();
@@ -153,6 +152,22 @@ public abstract class MongoDbService {
                 return null;
 
             // no JSON equivalent: MongoDB Extended JSON, which Load writes back as the same BSON type
+            case BINARY: {
+                var binary = doc.asBinary();
+                if (binary.getType() == BsonBinarySubType.BINARY.getValue()) {
+                    return binary.getData();
+                }
+                if (binary.getType() == BsonBinarySubType.UUID_STANDARD.getValue() && binary.getData().length == 16) {
+                    return document("$uuid", binary.asUuid().toString());
+                }
+                return document(
+                    "$binary",
+                    document(
+                        "base64", Base64.getEncoder().encodeToString(binary.getData()),
+                        "subType", "%02x".formatted(binary.getType() & 0xFF)
+                    )
+                );
+            }
             case TIMESTAMP:
                 // seconds and increment are unsigned 32-bit values
                 return document(

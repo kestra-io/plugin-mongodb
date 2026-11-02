@@ -3,11 +3,11 @@ package io.kestra.plugin.mongodb;
 import java.time.Duration;
 import java.util.Optional;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
 import org.bson.BsonDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCursor;
 
@@ -183,7 +183,10 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
     @Schema(
         title = "Store results",
-        description = "When true, writes results as Ion to internal storage; otherwise rows are kept in output. Defaults to false."
+        description = """
+            When true, writes the results as Ion to internal storage and passes their URI to the execution. When false, the default, passes every document in `rows`, held in memory and saved in the execution.
+            Keep false for small results: Kestra rejects trigger results above `kestra.queue.message-protection.limit` (1 MiB by default since 2.0), and the trigger logs a warning when the rows pass 1 MiB.
+            """
     )
     @Builder.Default
     @PluginProperty(group = "advanced")
