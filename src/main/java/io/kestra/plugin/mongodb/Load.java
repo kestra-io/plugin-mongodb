@@ -131,7 +131,7 @@ public class Load extends AbstractLoad {
         var missingIdCount = new AtomicLong();
 
         return FileSerde.readAll(inputStream)
-            .<WriteModel<Bson>> map(throwFunction(o ->
+            .<WriteModel<Bson>>map(throwFunction(o ->
             {
                 var values = (Map<String, Object>) o;
 
@@ -158,8 +158,7 @@ public class Load extends AbstractLoad {
                 // ordinary maps and values go straight into a Document, only Extended JSON wrappers were decoded above
                 return new InsertOneModel<Bson>(new Document(MongoDbService.withId(values)));
             }))
-            .doOnComplete(() ->
-            {
+            .doOnComplete(() -> {
                 if (missingIdCount.get() > 0 && rIdKey.isPresent()) {
                     runContext.logger().warn(
                         "Found {} record(s) with missing or null '{}', generated an ObjectId for each.",

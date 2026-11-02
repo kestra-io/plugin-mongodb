@@ -42,7 +42,17 @@ import static io.kestra.core.utils.Rethrow.throwConsumer;
 @NoArgsConstructor
 @Schema(
     title = "Run MongoDB bulkWrite from NDJSON",
-    description = "Reads newline-delimited bulk operations from internal storage and executes MongoDB bulkWrite. Supports insertOne, updateOne, updateMany, replaceOne, deleteOne and deleteMany in the db.collection.bulkWrite() format (https://www.mongodb.com/docs/manual/reference/method/db.collection.bulkWrite/). insertOne also accepts the legacy flat form where the body is the document itself; a body whose only field is an object named `document` is read as the bulkWrite form. Blank and whitespace-only lines are skipped. Delete, update and replace operations support `collation` and `hint`. Inherits chunking from AbstractLoad (default 1000 per bulk request). The file must be UTF-8: a line that isn't valid UTF-8 fails the task with its line number. When an operation fails, the task fails with its record number (counting emitted operations, not file lines); when a line can't be read, with its line number. Either way, its outputs count the operations applied before it, which are kept. A retry runs every line again, so it is only safe for operations that change nothing more when repeated, such as `replaceOne`, or `updateOne` with `$set`, using `upsert: true` as long as the filter still matches the document after the modification (such as filtering directly on `_id`): an `insertOne` is inserted again, or fails with a duplicate key error if it sets `_id`, `$inc` or `$push` updates are applied twice, and a `deleteOne` whose filter matches several documents deletes another one."
+    description = """
+        Reads newline-delimited bulk operations from internal storage and executes MongoDB bulkWrite.
+        Supports insertOne, updateOne, updateMany, replaceOne, deleteOne and deleteMany in the db.collection.bulkWrite() format (https://www.mongodb.com/docs/manual/reference/method/db.collection.bulkWrite/). insertOne also accepts the legacy flat form where the body is the document itself; a body whose only field is an object named `document` is read as the bulkWrite form.
+        Blank and whitespace-only lines are skipped.
+        Delete, update and replace operations support `collation` and `hint`.
+        Inherits chunking from AbstractLoad (default 1000 per bulk request).
+        The file must be UTF-8: a line that isn't valid UTF-8 fails the task with its line number.
+        When an operation fails, the task fails with its record number (counting emitted operations, not file lines); when a line can't be read, with its line number.
+        Either way, its outputs count the operations applied before it, which are kept.
+        A retry runs every line again, so it is only safe for operations that change nothing more when repeated, such as `replaceOne`, or `updateOne` with `$set`, using `upsert: true` as long as the filter still matches the document after the modification (such as filtering directly on `_id`): an `insertOne` is inserted again, or fails with a duplicate key error if it sets `_id`, `$inc` or `$push` updates are applied twice, and a `deleteOne` whose filter matches several documents deletes another one.
+        """
 )
 @Plugin(
     examples = {
@@ -89,6 +99,8 @@ public class Bulk extends AbstractLoad {
     private static final Set<String> DELETE_KEYS = Set.of("filter", "collation", "hint");
     private static final Set<String> REPLACE_KEYS = Set.of("filter", "replacement", "upsert", "bypassDocumentValidation", "collation", "hint");
     private static final Set<String> UPDATE_KEYS = Set.of("filter", "update", "upsert", "collation", "hint", "arrayFilters");
+    // DBRef fields, the only `$` prefixed names the driver allows in a replacement document
+    private static final Set<String> REPLACEMENT_EXCEPTIONS = Set.of("$db", "$ref", "$id");
 
     @Override
     protected Flux<WriteModel<Bson>> source(RunContext runContext, InputStream inputStream) throws IOException {
@@ -157,7 +169,7 @@ public class Bulk extends AbstractLoad {
                         case "replaceOne" -> {
                             validateKeys("replaceOne", body, REPLACE_KEYS);
                             var replacement = requireDocument("replaceOne", body, "replacement");
-                            validateReplacement(replacement);
+                            validateReplacement("replaceOne", replacement);
                             yield new ReplaceOneModel<>(
                                 requireDocument("replaceOne", body, "filter"),
                                 replacement,
@@ -167,7 +179,7 @@ public class Bulk extends AbstractLoad {
                         case "updateOne" -> {
                             validateKeys("updateOne", body, UPDATE_KEYS);
                             var update = requireDocument("updateOne", body, "update");
-                            validateUpdate(update);
+                            validateUpdate("updateOne", update);
                             yield new UpdateOneModel<>(
                                 requireDocument("updateOne", body, "filter"),
                                 update,
@@ -177,7 +189,7 @@ public class Bulk extends AbstractLoad {
                         case "updateMany" -> {
                             validateKeys("updateMany", body, UPDATE_KEYS);
                             var update = requireDocument("updateMany", body, "update");
-                            validateUpdate(update);
+                            validateUpdate("updateMany", update);
                             yield new UpdateManyModel<>(
                                 requireDocument("updateMany", body, "filter"),
                                 update,
@@ -214,8 +226,6 @@ public class Bulk extends AbstractLoad {
         });
     }
 
-    private static final Set<String> REPLACEMENT_EXCEPTIONS = Set.of("$db", "$ref", "$id");
-
     private static void validateKeys(String op, BsonDocument body, Set<String> allowed) {
         for (var key : body.keySet()) {
             if (!allowed.contains(key)) {
@@ -224,25 +234,27 @@ public class Bulk extends AbstractLoad {
         }
     }
 
-    private static void validateUpdate(BsonDocument update) {
+    private static void validateUpdate(String op, BsonDocument update) {
         if (update.isEmpty()) {
-            throw new IllegalArgumentException("Invalid BSON document for an update. The document may not be empty.");
+            throw new IllegalArgumentException(
+                op + " update must not be empty: add at least one update operator such as {\"$set\": {\"field\": \"value\"}}"
+            );
         }
 
         for (var key : update.keySet()) {
             if (!key.startsWith("$")) {
                 throw new IllegalArgumentException(
-                    "All update operators must start with '$', but '" + key + "' does not"
+                    op + " update must only hold update operators such as $set, but '" + key + "' does not start with '$': wrap the fields in $set, e.g. {\"$set\": {\"" + key + "\": ...}}, or use replaceOne to replace the whole document"
                 );
             }
         }
     }
 
-    private static void validateReplacement(BsonDocument replacement) {
+    private static void validateReplacement(String op, BsonDocument replacement) {
         for (var key : replacement.keySet()) {
             if (key.startsWith("$") && !REPLACEMENT_EXCEPTIONS.contains(key)) {
                 throw new IllegalArgumentException(
-                    "Field names in a replacement document can not start with '$' but '" + key + "' does"
+                    op + " replacement must be a plain document without update operators, but '" + key + "' starts with '$': use updateOne or updateMany for operators such as $set, or remove the '$' prefix from the field name"
                 );
             }
         }
