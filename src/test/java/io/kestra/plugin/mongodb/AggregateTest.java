@@ -489,7 +489,7 @@ class AggregateTest extends MongoDbContainer {
             .run(runContextFactory.of());
 
         assertThat(output.getSize(), is(1L));
-        assertThat(((Map<String, Object>) output.getRows().get(0)).get("_id"), is(Map.of("$oid", id.toHexString())));
+        assertThat(((Map<String, Object>) output.getRows().getFirst()).get("_id"), is(Map.of("$oid", id.toHexString())));
     }
 
     @Test
