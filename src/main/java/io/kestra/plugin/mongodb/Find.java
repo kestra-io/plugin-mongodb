@@ -153,6 +153,18 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
     @PluginProperty(group = "destination")
     private Property<Boolean> store = Property.ofValue(false);
 
+    @Schema(
+        title = "ObjectId format",
+        description = """
+            HEX returns ObjectIds as bare hex strings, as before. EXTENDED_JSON returns them as $oid wrappers, which Load writes back as ObjectIds, so a Find with store: true followed by Load keeps the type.
+            Under EXTENDED_JSON, rows[0]._id becomes a map with $oid, for example {"$oid": "60930c39a982931c20ef6cd6"}.
+            Defaults to HEX.
+            """
+    )
+    @Builder.Default
+    @PluginProperty(group = "processing")
+    private Property<MongoDbService.ObjectIdFormat> objectIdFormat = Property.ofValue(MongoDbService.ObjectIdFormat.HEX);
+
     @Override
     public Find.Output run(RunContext runContext) throws Exception {
         try (MongoClient client = this.client(runContext)) {
@@ -204,14 +216,18 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
 
         Output.OutputBuilder builder = Output.builder();
 
+        var rObjectIdFormat = runContext.render(this.objectIdFormat)
+            .as(MongoDbService.ObjectIdFormat.class)
+            .orElse(MongoDbService.ObjectIdFormat.HEX);
+
         if (runContext.render(this.store).as(Boolean.class).orElseThrow()) {
-            Pair<URI, Long> store = this.store(runContext, find, cursorListener, queryHook);
+            Pair<URI, Long> store = this.store(runContext, find, cursorListener, queryHook, rObjectIdFormat);
 
             builder
                 .uri(store.getLeft())
                 .size(store.getRight());
         } else {
-            var fetch = this.fetch(find, cursorListener, queryHook, logger);
+            var fetch = this.fetch(find, cursorListener, queryHook, rObjectIdFormat, logger);
 
             builder
                 .rows(fetch.getLeft())
@@ -232,7 +248,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         return output;
     }
 
-    private Pair<URI, Long> store(RunContext runContext, FindIterable<BsonDocument> documents, Consumer<MongoCursor<BsonDocument>> cursorListener, QueryHook queryHook) throws IOException {
+    private Pair<URI, Long> store(RunContext runContext, FindIterable<BsonDocument> documents, Consumer<MongoCursor<BsonDocument>> cursorListener, QueryHook queryHook, MongoDbService.ObjectIdFormat objectIdFormat) throws IOException {
         File tempFile = runContext.workingDir().createTempFile(".ion").toFile();
 
         try (
@@ -244,7 +260,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
                 .map(document ->
                 {
                     queryHook.document(document);
-                    return MongoDbService.map(document.toBsonDocument());
+                    return MongoDbService.map(document.toBsonDocument(), objectIdFormat);
                 });
             Long count = FileSerde.writeAll(output, flux).block();
 
@@ -255,7 +271,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
         }
     }
 
-    private Pair<ArrayList<Object>, Long> fetch(FindIterable<BsonDocument> documents, Consumer<MongoCursor<BsonDocument>> cursorListener, QueryHook queryHook, Logger logger)
+    private Pair<ArrayList<Object>, Long> fetch(FindIterable<BsonDocument> documents, Consumer<MongoCursor<BsonDocument>> cursorListener, QueryHook queryHook, MongoDbService.ObjectIdFormat objectIdFormat, Logger logger)
         throws IOException {
         ArrayList<Object> result = new ArrayList<>();
         AtomicLong count = new AtomicLong();
@@ -267,7 +283,7 @@ public class Find extends AbstractTask implements RunnableTask<Find.Output> {
                 BsonDocument bsonDocument = mongoCursor.next();
                 queryHook.document(bsonDocument);
                 count.incrementAndGet();
-                var row = MongoDbService.map(bsonDocument.toBsonDocument());
+                var row = MongoDbService.map(bsonDocument.toBsonDocument(), objectIdFormat);
                 outputsSize.add(row);
                 result.add(row);
             }

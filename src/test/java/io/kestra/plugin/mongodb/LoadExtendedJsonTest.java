@@ -6,8 +6,8 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.OffsetDateTime;
 import java.time.ZonedDateTime;
-import java.util.List;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -47,8 +47,7 @@ class LoadExtendedJsonTest {
     private static final BigInteger INTEGER_REQUIRING_ROUNDING = new BigInteger("12345678901234567890123456789012345");
     private static final BigInteger MAX_ADJUSTED_EXPONENT_INTEGER = BigInteger.TEN.pow(6144);
     private static final BigInteger INTEGER_OUTSIDE_DECIMAL128_RANGE = BigInteger.TEN.pow(6145);
-    private static final BigInteger MAX_FINITE_DECIMAL128_INTEGER =
-        BigInteger.TEN.pow(34).subtract(BigInteger.ONE).multiply(BigInteger.TEN.pow(6111));
+    private static final BigInteger MAX_FINITE_DECIMAL128_INTEGER = BigInteger.TEN.pow(34).subtract(BigInteger.ONE).multiply(BigInteger.TEN.pow(6111));
     private static final BigInteger NESTED_BIG_INTEGER = new BigInteger("98765432101234567890");
 
     @Inject
@@ -146,7 +145,7 @@ class LoadExtendedJsonTest {
             .append("legacyUuid", new BsonBinary(uuid, UuidRepresentation.JAVA_LEGACY))
             .append("userDefined", new BsonBinary((byte) 0x80, new byte[] { 4, 5 }));
 
-        var mapped = (Map<String, Object>) MongoDbService.map(original);
+        var mapped = (Map<String, Object>) MongoDbService.map(original, MongoDbService.ObjectIdFormat.HEX);
         var encoded = encode(mapped);
 
         assertThat(mapped.get("generic"), is(new byte[] { 1, 2, 3 }));
