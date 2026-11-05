@@ -9,13 +9,14 @@ import org.bson.codecs.configuration.CodecConfigurationException;
 import org.bson.conversions.Bson;
 import org.junit.jupiter.api.Test;
 
-import com.mongodb.MongoClientException;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoSocketReadException;
+import com.mongodb.MongoTimeoutException;
 import com.mongodb.ServerAddress;
 import com.mongodb.WriteConcern;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.InsertOneModel;
+import com.mongodb.client.model.UpdateOneModel;
 import com.mongodb.client.model.WriteModel;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -59,9 +60,6 @@ class DriverRejectionTest {
             new InsertOneModel<>(new Document("a", 1)),
             new InsertOneModel<>(new Document("b", 2))
         );
-        var successfulCollection = mockCollection(chunk ->
-        {
-        });
         var successMock = new com.mongodb.bulk.BulkWriteResult() {
             @Override
             public boolean wasAcknowledged() {
@@ -121,11 +119,11 @@ class DriverRejectionTest {
 
         assertThat(
             ex.getMessage(),
-            is("Record 4 was rejected by the driver (2 records applied before it): Document size of 17825807 is larger than maximum of 16777216.")
+            is("Record 4 was rejected by the driver (3 records applied before it): Document size of 17825807 is larger than maximum of 16777216.")
         );
-        var output = progress.output(2);
-        assertThat(output.getSize(), is(2L));
-        assertThat(output.getInsertedCount(), is(2));
+        var output = progress.output(3);
+        assertThat(output.getSize(), is(3L));
+        assertThat(output.getInsertedCount(), is(3));
     }
 
     @Test
@@ -146,7 +144,51 @@ class DriverRejectionTest {
 
         assertThat(
             ex.getMessage(),
-            is("Record 2 was rejected by the driver (0 records applied before it): Can not find a codec for class java.lang.Object.")
+            is("Record 2 was rejected by the driver (it's unknown whether an earlier batch was applied): Can not find a codec for class java.lang.Object.")
+        );
+    }
+
+    @Test
+    void invalidUpdateWithoutOperatorInMultiRecordChunkPinpointsFailingRecord() {
+        var collection = mockCollection(chunk ->
+        {
+            throw new IllegalArgumentException("Invalid BSON field name name: All update operators must start with '$', but 'name' does not");
+        });
+
+        var progress = new AbstractLoad.Progress(true);
+        var chunk = List.<WriteModel<Bson>> of(
+            new UpdateOneModel<>(new Document("_id", 1), new Document("$set", new Document("name", "valid"))),
+            new UpdateOneModel<>(new Document("_id", 2), new Document("name", "invalid")),
+            new UpdateOneModel<>(new Document("_id", 3), new Document("$set", new Document("name", "valid2")))
+        );
+
+        var ex = assertThrows(AbstractLoad.WriteFailure.class, () -> progress.write(collection, chunk));
+
+        assertThat(
+            ex.getMessage(),
+            is(
+                "Record 2 was rejected by the driver (it's unknown whether an earlier batch was applied): Invalid BSON field name name: All update operators must start with '$', but 'name' does not"
+            )
+        );
+    }
+
+    @Test
+    void singleRecordChunkDriverRejectionReportsAppliedCount() {
+        var collection = mockCollection(chunk ->
+        {
+            throw new CodecConfigurationException("Can not find a codec for class java.lang.Object.");
+        });
+
+        var progress = new AbstractLoad.Progress(true);
+        var chunk = List.<WriteModel<Bson>> of(
+            new InsertOneModel<>(new Document("invalid", new Object()))
+        );
+
+        var ex = assertThrows(AbstractLoad.WriteFailure.class, () -> progress.write(collection, chunk));
+
+        assertThat(
+            ex.getMessage(),
+            is("Record 1 was rejected by the driver (0 records applied before it): Can not find a codec for class java.lang.Object.")
         );
     }
 
@@ -154,7 +196,7 @@ class DriverRejectionTest {
     void clientDriverRejectionWithoutIsolatedRecordNamesChunk() {
         var collection = mockCollection(chunk ->
         {
-            throw new MongoClientException("Driver rejected operation due to client-side rule.");
+            throw new IllegalArgumentException("Driver rejected operation due to client-side rule.");
         });
 
         var progress = new AbstractLoad.Progress(true);
@@ -168,7 +210,7 @@ class DriverRejectionTest {
 
         assertThat(
             ex.getMessage(),
-            is("The chunk of records 1 to 3 was rejected by the driver (0 records applied before it): Driver rejected operation due to client-side rule.")
+            is("The chunk of records 1 to 3 was rejected by the driver (it's unknown whether an earlier batch was applied): Driver rejected operation due to client-side rule.")
         );
     }
 
@@ -190,6 +232,29 @@ class DriverRejectionTest {
         assertThat(
             ex.getMessage(),
             is("The chunk of records 1 to 2 failed and MongoDB returned no result, so it's unknown which of its records were applied (0 records applied before it): connection reset")
+        );
+    }
+
+    @Test
+    void mongoTimeoutExceptionReportsUnknownAppliedInsteadOfDriverRejection() {
+        var collection = mockCollection(chunk ->
+        {
+            throw new MongoTimeoutException("Timed out after 30000 ms while waiting for a server that matches ReadPreferenceServerSelector.");
+        });
+
+        var progress = new AbstractLoad.Progress(true);
+        var chunk = List.<WriteModel<Bson>> of(
+            new InsertOneModel<>(new Document("a", 1)),
+            new InsertOneModel<>(new Document("b", 2))
+        );
+
+        var ex = assertThrows(AbstractLoad.WriteFailure.class, () -> progress.write(collection, chunk));
+
+        assertThat(
+            ex.getMessage(),
+            is(
+                "The chunk of records 1 to 2 failed and MongoDB returned no result, so it's unknown which of its records were applied (0 records applied before it): Timed out after 30000 ms while waiting for a server that matches ReadPreferenceServerSelector."
+            )
         );
     }
 

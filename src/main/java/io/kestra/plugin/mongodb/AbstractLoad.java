@@ -7,11 +7,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
-import org.bson.BSONException;
 import org.bson.BsonBinaryWriter;
 import org.bson.BsonBinaryWriterSettings;
 import org.bson.BsonDocument;
+import org.bson.BsonMaximumSizeExceededException;
 import org.bson.BsonWriterSettings;
+import org.bson.FieldNameValidator;
 import org.bson.codecs.BsonDocumentCodec;
 import org.bson.codecs.EncoderContext;
 import org.bson.codecs.configuration.CodecConfigurationException;
@@ -21,7 +22,6 @@ import org.bson.io.BasicOutputBuffer;
 import org.slf4j.Logger;
 
 import com.mongodb.MongoBulkWriteException;
-import com.mongodb.MongoClientException;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.MongoClient;
@@ -33,6 +33,8 @@ import com.mongodb.client.model.ReplaceOneModel;
 import com.mongodb.client.model.UpdateManyModel;
 import com.mongodb.client.model.UpdateOneModel;
 import com.mongodb.client.model.WriteModel;
+import com.mongodb.connection.ServerDescription;
+import com.mongodb.internal.validator.UpdateFieldNameValidator;
 
 import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.metrics.Counter;
@@ -91,7 +93,17 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
             MongoCollection<Bson> collection = this.collection(runContext, client);
 
             AtomicLong count = new AtomicLong();
-            var progress = new Progress(collection.getWriteConcern().isAcknowledged());
+            int maxDocumentSize = ServerDescription.getDefaultMaxDocumentSize();
+            try {
+                for (var desc : client.getClusterDescription().getServerDescriptions()) {
+                    if (desc.getMaxDocumentSize() > 0) {
+                        maxDocumentSize = desc.getMaxDocumentSize();
+                        break;
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+            var progress = new Progress(collection.getWriteConcern().isAcknowledged(), maxDocumentSize);
 
             Flux<BulkWriteResult> flowable = this.source(runContext, inputStream)
                 .onErrorMap(e -> new ReadFailure(e))
@@ -158,8 +170,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
 
     // records are read ahead of the chunk being written, so only applied tells how far the run got
     static class Progress {
-        private static final int MAX_BSON_DOCUMENT_SIZE = 16 * 1024 * 1024;
-
+        private final int maxDocumentSize;
         private long requests;
         private long applied;
         private final boolean acknowledged;
@@ -170,7 +181,12 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
         private int upsertedCount;
 
         Progress(boolean acknowledged) {
+            this(acknowledged, ServerDescription.getDefaultMaxDocumentSize());
+        }
+
+        Progress(boolean acknowledged, int maxDocumentSize) {
             this.acknowledged = acknowledged;
+            this.maxDocumentSize = maxDocumentSize;
         }
 
         BulkWriteResult write(MongoCollection<Bson> collection, List<WriteModel<Bson>> chunk) {
@@ -200,21 +216,40 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
             } catch (RuntimeException e) {
                 if (isDriverRejection(e)) {
                     var offendingIndex = findOffendingIndex(chunk, collection.getCodecRegistry());
+                    if (offendingIndex == null && chunk.size() == 1) {
+                        offendingIndex = 0;
+                    }
+
                     if (offendingIndex != null) {
                         var recordNumber = this.applied + 1 + offendingIndex;
+                        String appliedInfo;
+                        if (e instanceof BsonMaximumSizeExceededException) {
+                            if (this.acknowledged) {
+                                for (int i = 0; i < offendingIndex; i++) {
+                                    var model = chunk.get(i);
+                                    if (model instanceof InsertOneModel) {
+                                        this.insertedCount++;
+                                    } else if (model instanceof DeleteOneModel || model instanceof DeleteManyModel) {
+                                        this.deletedCount++;
+                                    }
+                                }
+                            }
+                            this.applied += offendingIndex;
+                            appliedInfo = count(this.applied) + " applied before it";
+                        } else if (chunk.size() == 1) {
+                            appliedInfo = count(this.applied) + " applied before it";
+                        } else {
+                            appliedInfo = "it's unknown whether an earlier batch was applied";
+                        }
+
                         throw new WriteFailure(
-                            "Record " + recordNumber + " was rejected by the driver (" + count(this.applied) + " applied before it): " + e.getMessage(),
+                            "Record " + recordNumber + " was rejected by the driver (" + appliedInfo + "): " + e.getMessage(),
                             e
                         );
                     }
-                    if (chunk.size() == 1) {
-                        throw new WriteFailure(
-                            "Record " + (this.applied + 1) + " was rejected by the driver (" + count(this.applied) + " applied before it): " + e.getMessage(),
-                            e
-                        );
-                    }
+
                     throw new WriteFailure(
-                        "The chunk of " + records + " was rejected by the driver (" + count(this.applied) + " applied before it): " + e.getMessage(),
+                        "The chunk of " + records + " was rejected by the driver (it's unknown whether an earlier batch was applied): " + e.getMessage(),
                         e
                     );
                 }
@@ -233,20 +268,12 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
         }
 
         private static boolean isDriverRejection(Throwable e) {
-            for (Throwable current = e; current != null; current = current.getCause()) {
-                if (
-                    current instanceof BSONException
-                        || current instanceof CodecConfigurationException
-                        || current instanceof IllegalArgumentException
-                        || current instanceof MongoClientException
-                ) {
-                    return true;
-                }
-            }
-            return false;
+            return e instanceof BsonMaximumSizeExceededException
+                || e instanceof CodecConfigurationException
+                || e instanceof IllegalArgumentException;
         }
 
-        private static Integer findOffendingIndex(List<WriteModel<Bson>> chunk, CodecRegistry registry) {
+        private Integer findOffendingIndex(List<WriteModel<Bson>> chunk, CodecRegistry registry) {
             var activeRegistry = registry != null ? registry : MongoClientSettings.getDefaultCodecRegistry();
             for (var i = 0; i < chunk.size(); i++) {
                 try {
@@ -258,46 +285,55 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
             return null;
         }
 
-        private static void validateModel(WriteModel<Bson> model, CodecRegistry registry) {
+        private void validateModel(WriteModel<Bson> model, CodecRegistry registry) {
             if (model instanceof InsertOneModel<Bson> insert) {
                 validateBson(insert.getDocument(), registry);
             } else if (model instanceof ReplaceOneModel<Bson> replace) {
                 validateBson(replace.getFilter(), registry);
                 validateBson(replace.getReplacement(), registry);
             } else if (model instanceof UpdateOneModel<Bson> update) {
-                validateBson(update.getFilter(), registry);
-                if (update.getUpdate() != null) {
-                    validateBson(update.getUpdate(), registry);
-                }
-                if (update.getUpdatePipeline() != null) {
-                    for (var stage : update.getUpdatePipeline()) {
-                        validateBson(stage, registry);
-                    }
-                }
+                validateUpdate(registry, update.getFilter(), update.getUpdate(), update.getUpdatePipeline());
             } else if (model instanceof UpdateManyModel<Bson> update) {
-                validateBson(update.getFilter(), registry);
-                if (update.getUpdate() != null) {
-                    validateBson(update.getUpdate(), registry);
-                }
-                if (update.getUpdatePipeline() != null) {
-                    for (var stage : update.getUpdatePipeline()) {
-                        validateBson(stage, registry);
-                    }
-                }
+                validateUpdate(registry, update.getFilter(), update.getUpdate(), update.getUpdatePipeline());
             } else if (model instanceof DeleteOneModel<Bson> delete) {
-                validateBson(delete.getFilter(), registry);
+                validateDelete(registry, delete.getFilter());
             } else if (model instanceof DeleteManyModel<Bson> delete) {
-                validateBson(delete.getFilter(), registry);
+                validateDelete(registry, delete.getFilter());
             }
         }
 
-        private static void validateBson(Bson bson, CodecRegistry registry) {
+        private void validateUpdate(CodecRegistry registry, Bson filter, Bson update, List<? extends Bson> updatePipeline) {
+            validateBson(filter, registry);
+            if (update != null) {
+                validateBson(update, registry, new UpdateFieldNameValidator());
+            }
+            if (updatePipeline != null) {
+                for (var stage : updatePipeline) {
+                    validateBson(stage, registry);
+                }
+            }
+        }
+
+        private void validateDelete(CodecRegistry registry, Bson filter) {
+            validateBson(filter, registry);
+        }
+
+        private void validateBson(Bson bson, CodecRegistry registry) {
+            validateBson(bson, registry, null);
+        }
+
+        private void validateBson(Bson bson, CodecRegistry registry, FieldNameValidator validator) {
             if (bson == null) {
                 return;
             }
             BsonDocument doc = bson.toBsonDocument(BsonDocument.class, registry);
             var buffer = new BasicOutputBuffer();
-            try (var writer = new BsonBinaryWriter(new BsonWriterSettings(), new BsonBinaryWriterSettings(MAX_BSON_DOCUMENT_SIZE), buffer)) {
+            var binaryWriterSettings = new BsonBinaryWriterSettings(this.maxDocumentSize);
+            try (
+                var writer = validator != null
+                    ? new BsonBinaryWriter(new BsonWriterSettings(), binaryWriterSettings, buffer, validator)
+                    : new BsonBinaryWriter(new BsonWriterSettings(), binaryWriterSettings, buffer)
+            ) {
                 new BsonDocumentCodec().encode(writer, doc, EncoderContext.builder().build());
             }
         }
