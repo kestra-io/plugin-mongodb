@@ -193,6 +193,18 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     private Property<Boolean> store = Property.ofValue(false);
 
     @Schema(
+        title = "ObjectId format",
+        description = """
+            HEX returns ObjectIds as bare hex strings, as before. EXTENDED_JSON returns them as $oid wrappers, which Load writes back as ObjectIds.
+            Under EXTENDED_JSON, rows[0]._id becomes a map with $oid, for example {"$oid": "60930c39a982931c20ef6cd6"}.
+            Defaults to HEX.
+            """
+    )
+    @Builder.Default
+    @PluginProperty(group = "advanced")
+    private Property<MongoDbService.ObjectIdFormat> objectIdFormat = Property.ofValue(MongoDbService.ObjectIdFormat.HEX);
+
+    @Schema(
         title = "Watermark field",
         description = """
             Field used to deliver each document only once, such as `updatedAt`, a sequence number or `_id`. A dotted path reaches a nested field.
@@ -236,6 +248,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
             .limit(this.limit)
             .skip(this.skip)
             .store(this.store)
+            .objectIdFormat(this.objectIdFormat)
             .build();
 
         var watermark = this.watermark(runContext, context);

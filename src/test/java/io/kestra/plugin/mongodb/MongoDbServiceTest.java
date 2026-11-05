@@ -55,17 +55,17 @@ class MongoDbServiceTest {
 
     @Test
     void mapKeepsTheBinarySubtype() {
-        assertThat(MongoDbService.map(new BsonBinary(new byte[] { 1, 2, 3 })), is(new byte[] { 1, 2, 3 }));
+        assertThat(MongoDbService.map(new BsonBinary(new byte[] { 1, 2, 3 }), MongoDbService.ObjectIdFormat.HEX), is(new byte[] { 1, 2, 3 }));
         assertThat(
-            MongoDbService.map(new BsonBinary(UUID_VALUE, UuidRepresentation.STANDARD)),
+            MongoDbService.map(new BsonBinary(UUID_VALUE, UuidRepresentation.STANDARD), MongoDbService.ObjectIdFormat.HEX),
             is(Map.of("$uuid", "3b241101-e2bb-4255-8caf-4136c566a962"))
         );
         assertThat(
-            MongoDbService.map(new BsonBinary(UUID_VALUE, UuidRepresentation.JAVA_LEGACY)),
+            MongoDbService.map(new BsonBinary(UUID_VALUE, UuidRepresentation.JAVA_LEGACY), MongoDbService.ObjectIdFormat.HEX),
             is(Map.of("$binary", Map.of("base64", "VUK74gERJDtiqWbFNkGvjA==", "subType", "03")))
         );
         assertThat(
-            MongoDbService.map(new BsonBinary((byte) 0x80, new byte[] { 1, 2, 3 })),
+            MongoDbService.map(new BsonBinary((byte) 0x80, new byte[] { 1, 2, 3 }), MongoDbService.ObjectIdFormat.HEX),
             is(Map.of("$binary", Map.of("base64", "AQID", "subType", "80")))
         );
     }
