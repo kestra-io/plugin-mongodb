@@ -14,6 +14,9 @@ import com.mongodb.MongoSocketReadException;
 import com.mongodb.MongoTimeoutException;
 import com.mongodb.ServerAddress;
 import com.mongodb.WriteConcern;
+import com.mongodb.bulk.BulkWriteInsert;
+import com.mongodb.bulk.BulkWriteResult;
+import com.mongodb.bulk.BulkWriteUpsert;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.InsertOneModel;
 import com.mongodb.client.model.UpdateOneModel;
@@ -60,7 +63,7 @@ class DriverRejectionTest {
             new InsertOneModel<>(new Document("a", 1)),
             new InsertOneModel<>(new Document("b", 2))
         );
-        var successMock = new com.mongodb.bulk.BulkWriteResult() {
+        var successMock = new BulkWriteResult() {
             @Override
             public boolean wasAcknowledged() {
                 return true;
@@ -87,12 +90,12 @@ class DriverRejectionTest {
             }
 
             @Override
-            public List<com.mongodb.bulk.BulkWriteInsert> getInserts() {
+            public List<BulkWriteInsert> getInserts() {
                 return List.of();
             }
 
             @Override
-            public List<com.mongodb.bulk.BulkWriteUpsert> getUpserts() {
+            public List<BulkWriteUpsert> getUpserts() {
                 return List.of();
             }
         };

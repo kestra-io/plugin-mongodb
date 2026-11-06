@@ -351,8 +351,8 @@ class LoadTest extends MongoDbContainer {
 
     @Test
     void oversizedDocumentInMiddleOfChunkReportsAccurateAppliedCount() throws Exception {
-        RunContext runContext = runContextFactory.of();
-        String database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+        var runContext = runContextFactory.of();
+        var database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
 
         URI uri = put(
             List.of(
@@ -363,7 +363,7 @@ class LoadTest extends MongoDbContainer {
                 Map.of("n", 5)
             )
         );
-        Load load = load(database, "oversized", uri).chunk(Property.ofValue(5)).build();
+        var load = load(database, "oversized", uri).chunk(Property.ofValue(5)).build();
 
         var e = assertThrows(RunnableTaskException.class, () -> load.run(runContext));
 

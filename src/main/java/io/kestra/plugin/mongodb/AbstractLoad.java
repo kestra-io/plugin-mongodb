@@ -34,7 +34,6 @@ import com.mongodb.client.model.UpdateManyModel;
 import com.mongodb.client.model.UpdateOneModel;
 import com.mongodb.client.model.WriteModel;
 import com.mongodb.connection.ServerDescription;
-import com.mongodb.internal.validator.UpdateFieldNameValidator;
 
 import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.metrics.Counter;
@@ -93,17 +92,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
             MongoCollection<Bson> collection = this.collection(runContext, client);
 
             AtomicLong count = new AtomicLong();
-            int maxDocumentSize = ServerDescription.getDefaultMaxDocumentSize();
-            try {
-                for (var desc : client.getClusterDescription().getServerDescriptions()) {
-                    if (desc.getMaxDocumentSize() > 0) {
-                        maxDocumentSize = desc.getMaxDocumentSize();
-                        break;
-                    }
-                }
-            } catch (Exception ignored) {
-            }
-            var progress = new Progress(collection.getWriteConcern().isAcknowledged(), maxDocumentSize);
+            var progress = new Progress(collection.getWriteConcern().isAcknowledged());
 
             Flux<BulkWriteResult> flowable = this.source(runContext, inputStream)
                 .onErrorMap(e -> new ReadFailure(e))
@@ -170,7 +159,9 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
 
     // records are read ahead of the chunk being written, so only applied tells how far the run got
     static class Progress {
-        private final int maxDocumentSize;
+        // the cluster is still being discovered when the run starts, so the server's own limit can't be read reliably
+        private static final int MAX_DOCUMENT_SIZE = ServerDescription.getDefaultMaxDocumentSize();
+
         private long requests;
         private long applied;
         private final boolean acknowledged;
@@ -181,12 +172,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
         private int upsertedCount;
 
         Progress(boolean acknowledged) {
-            this(acknowledged, ServerDescription.getDefaultMaxDocumentSize());
-        }
-
-        Progress(boolean acknowledged, int maxDocumentSize) {
             this.acknowledged = acknowledged;
-            this.maxDocumentSize = maxDocumentSize;
         }
 
         BulkWriteResult write(MongoCollection<Bson> collection, List<WriteModel<Bson>> chunk) {
@@ -225,12 +211,10 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
                         String appliedInfo;
                         if (e instanceof BsonMaximumSizeExceededException) {
                             if (this.acknowledged) {
-                                for (int i = 0; i < offendingIndex; i++) {
-                                    var model = chunk.get(i);
-                                    if (model instanceof InsertOneModel) {
+                                // exact for inserts; the other types can't be counted without the server's result
+                                for (var i = 0; i < offendingIndex; i++) {
+                                    if (chunk.get(i) instanceof InsertOneModel) {
                                         this.insertedCount++;
-                                    } else if (model instanceof DeleteOneModel || model instanceof DeleteManyModel) {
-                                        this.deletedCount++;
                                     }
                                 }
                             }
@@ -305,7 +289,7 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
         private void validateUpdate(CodecRegistry registry, Bson filter, Bson update, List<? extends Bson> updatePipeline) {
             validateBson(filter, registry);
             if (update != null) {
-                validateBson(update, registry, new UpdateFieldNameValidator());
+                validateBson(update, registry, new UpdateOperatorFieldNameValidator());
             }
             if (updatePipeline != null) {
                 for (var stage : updatePipeline) {
@@ -326,9 +310,9 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
             if (bson == null) {
                 return;
             }
-            BsonDocument doc = bson.toBsonDocument(BsonDocument.class, registry);
+            var doc = bson.toBsonDocument(BsonDocument.class, registry);
             var buffer = new BasicOutputBuffer();
-            var binaryWriterSettings = new BsonBinaryWriterSettings(this.maxDocumentSize);
+            var binaryWriterSettings = new BsonBinaryWriterSettings(MAX_DOCUMENT_SIZE);
             try (
                 var writer = validator != null
                     ? new BsonBinaryWriter(new BsonWriterSettings(), binaryWriterSettings, buffer, validator)
@@ -373,6 +357,34 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
         }
     }
 
+    // public-API equivalent of the driver's internal update validator: top-level names must be operators
+    private static class UpdateOperatorFieldNameValidator implements FieldNameValidator {
+        @Override
+        public boolean validate(String fieldName) {
+            return fieldName.startsWith("$");
+        }
+
+        @Override
+        public String getValidationErrorMessage(String fieldName) {
+            return "Invalid BSON field name " + fieldName + ": update documents must only contain update operators such as $set";
+        }
+
+        @Override
+        public FieldNameValidator getValidatorForField(String fieldName) {
+            return new FieldNameValidator() {
+                @Override
+                public boolean validate(String name) {
+                    return true;
+                }
+
+                @Override
+                public FieldNameValidator getValidatorForField(String name) {
+                    return this;
+                }
+            };
+        }
+    }
+
     static class WriteFailure extends RuntimeException {
         WriteFailure(String message, Throwable cause) {
             super(message, cause);
@@ -409,28 +421,28 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
 
         @Schema(
             title = "Matched documents",
-            description = "Documents matched by update or replacement models. 0 for unacknowledged writes (`w=0`), which have no counts to report."
+            description = "Documents matched by update or replacement models. After a task fails on a driver rejection, this count doesn't include the batch the driver sent just before the rejected record. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int matchedCount = 0;
 
         @Schema(
             title = "Deleted documents",
-            description = "Documents removed by bulk delete models. 0 for unacknowledged writes (`w=0`), which have no counts to report."
+            description = "Documents removed by bulk delete models. After a task fails on a driver rejection, this count doesn't include the batch the driver sent just before the rejected record. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int deletedCount = 0;
 
         @Schema(
             title = "Modified documents",
-            description = "Documents updated by bulk operations. 0 for unacknowledged writes (`w=0`), which have no counts to report."
+            description = "Documents updated by bulk operations. After a task fails on a driver rejection, this count doesn't include the batch the driver sent just before the rejected record. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int modifiedCount = 0;
 
         @Schema(
             title = "Upserted documents",
-            description = "Documents created by update or replacement models with `upsert: true` that matched no document. Only `Bulk` sends these models, so it's always 0 for `Load`. 0 for unacknowledged writes (`w=0`), which have no counts to report."
+            description = "Documents created by update or replacement models with `upsert: true` that matched no document. Only `Bulk` sends these models, so it's always 0 for `Load`. After a task fails on a driver rejection, this count doesn't include the batch the driver sent just before the rejected record. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int upsertedCount = 0;
