@@ -65,7 +65,7 @@ final class TriggerWatermark implements Find.QueryHook {
 
         BsonDocument position;
         try {
-            position = BsonDocument.parse((String) stored.get().value());
+            position = MongoDbService.parse((String) stored.get().value());
         } catch (RuntimeException e) {
             throw new IllegalStateException(unreadable(key, namespace), e);
         }
