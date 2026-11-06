@@ -7,14 +7,33 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.bson.BsonBinaryWriter;
+import org.bson.BsonBinaryWriterSettings;
+import org.bson.BsonDocument;
+import org.bson.BsonMaximumSizeExceededException;
+import org.bson.BsonWriterSettings;
+import org.bson.FieldNameValidator;
+import org.bson.codecs.BsonDocumentCodec;
+import org.bson.codecs.EncoderContext;
+import org.bson.codecs.configuration.CodecConfigurationException;
+import org.bson.codecs.configuration.CodecRegistry;
 import org.bson.conversions.Bson;
+import org.bson.io.BasicOutputBuffer;
 import org.slf4j.Logger;
 
 import com.mongodb.MongoBulkWriteException;
+import com.mongodb.MongoClientSettings;
 import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
+import com.mongodb.client.model.DeleteManyModel;
+import com.mongodb.client.model.DeleteOneModel;
+import com.mongodb.client.model.InsertOneModel;
+import com.mongodb.client.model.ReplaceOneModel;
+import com.mongodb.client.model.UpdateManyModel;
+import com.mongodb.client.model.UpdateOneModel;
 import com.mongodb.client.model.WriteModel;
+import com.mongodb.connection.ServerDescription;
 
 import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.executions.metrics.Counter;
@@ -139,7 +158,10 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
     }
 
     // records are read ahead of the chunk being written, so only applied tells how far the run got
-    private static class Progress {
+    static class Progress {
+        // the cluster is still being discovered when the run starts, so the server's own limit can't be read reliably
+        private static final int MAX_DOCUMENT_SIZE = ServerDescription.getDefaultMaxDocumentSize();
+
         private long requests;
         private long applied;
         private final boolean acknowledged;
@@ -178,6 +200,44 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
                 this.applied += error.getIndex();
                 throw new WriteFailure("Record " + (this.applied + 1) + " failed (" + count(this.applied) + " applied before it): " + error.getMessage(), e);
             } catch (RuntimeException e) {
+                if (isDriverRejection(e)) {
+                    var offendingIndex = findOffendingIndex(chunk, collection.getCodecRegistry());
+                    if (offendingIndex == null && chunk.size() == 1) {
+                        offendingIndex = 0;
+                    }
+
+                    if (offendingIndex != null) {
+                        var recordNumber = this.applied + 1 + offendingIndex;
+                        String appliedInfo;
+                        if (e instanceof BsonMaximumSizeExceededException) {
+                            if (this.acknowledged) {
+                                // exact for inserts; the other types can't be counted without the server's result
+                                for (var i = 0; i < offendingIndex; i++) {
+                                    if (chunk.get(i) instanceof InsertOneModel) {
+                                        this.insertedCount++;
+                                    }
+                                }
+                            }
+                            this.applied += offendingIndex;
+                            appliedInfo = count(this.applied) + " applied before it";
+                        } else if (chunk.size() == 1) {
+                            appliedInfo = count(this.applied) + " applied before it";
+                        } else {
+                            appliedInfo = "it's unknown whether an earlier batch was applied";
+                        }
+
+                        throw new WriteFailure(
+                            "Record " + recordNumber + " was rejected by the driver (" + appliedInfo + "): " + e.getMessage(),
+                            e
+                        );
+                    }
+
+                    throw new WriteFailure(
+                        "The chunk of " + records + " was rejected by the driver (it's unknown whether an earlier batch was applied): " + e.getMessage(),
+                        e
+                    );
+                }
+
                 // no write result, for example after a network error or a failover
                 throw new WriteFailure(
                     "The chunk of " + records + " failed and MongoDB returned no result, so it's unknown which of its records were applied (" +
@@ -189,6 +249,77 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
             this.add(result);
             this.applied += chunk.size();
             return result;
+        }
+
+        private static boolean isDriverRejection(Throwable e) {
+            return e instanceof BsonMaximumSizeExceededException
+                || e instanceof CodecConfigurationException
+                || e instanceof IllegalArgumentException;
+        }
+
+        private Integer findOffendingIndex(List<WriteModel<Bson>> chunk, CodecRegistry registry) {
+            var activeRegistry = registry != null ? registry : MongoClientSettings.getDefaultCodecRegistry();
+            for (var i = 0; i < chunk.size(); i++) {
+                try {
+                    validateModel(chunk.get(i), activeRegistry);
+                } catch (Exception ex) {
+                    return i;
+                }
+            }
+            return null;
+        }
+
+        private void validateModel(WriteModel<Bson> model, CodecRegistry registry) {
+            if (model instanceof InsertOneModel<Bson> insert) {
+                validateBson(insert.getDocument(), registry);
+            } else if (model instanceof ReplaceOneModel<Bson> replace) {
+                validateBson(replace.getFilter(), registry);
+                validateBson(replace.getReplacement(), registry);
+            } else if (model instanceof UpdateOneModel<Bson> update) {
+                validateUpdate(registry, update.getFilter(), update.getUpdate(), update.getUpdatePipeline());
+            } else if (model instanceof UpdateManyModel<Bson> update) {
+                validateUpdate(registry, update.getFilter(), update.getUpdate(), update.getUpdatePipeline());
+            } else if (model instanceof DeleteOneModel<Bson> delete) {
+                validateDelete(registry, delete.getFilter());
+            } else if (model instanceof DeleteManyModel<Bson> delete) {
+                validateDelete(registry, delete.getFilter());
+            }
+        }
+
+        private void validateUpdate(CodecRegistry registry, Bson filter, Bson update, List<? extends Bson> updatePipeline) {
+            validateBson(filter, registry);
+            if (update != null) {
+                validateBson(update, registry, new UpdateOperatorFieldNameValidator());
+            }
+            if (updatePipeline != null) {
+                for (var stage : updatePipeline) {
+                    validateBson(stage, registry);
+                }
+            }
+        }
+
+        private void validateDelete(CodecRegistry registry, Bson filter) {
+            validateBson(filter, registry);
+        }
+
+        private void validateBson(Bson bson, CodecRegistry registry) {
+            validateBson(bson, registry, null);
+        }
+
+        private void validateBson(Bson bson, CodecRegistry registry, FieldNameValidator validator) {
+            if (bson == null) {
+                return;
+            }
+            var doc = bson.toBsonDocument(BsonDocument.class, registry);
+            var buffer = new BasicOutputBuffer();
+            var binaryWriterSettings = new BsonBinaryWriterSettings(MAX_DOCUMENT_SIZE);
+            try (
+                var writer = validator != null
+                    ? new BsonBinaryWriter(new BsonWriterSettings(), binaryWriterSettings, buffer, validator)
+                    : new BsonBinaryWriter(new BsonWriterSettings(), binaryWriterSettings, buffer)
+            ) {
+                new BsonDocumentCodec().encode(writer, doc, EncoderContext.builder().build());
+            }
         }
 
         private void add(BulkWriteResult result) {
@@ -226,7 +357,35 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
         }
     }
 
-    private static class WriteFailure extends RuntimeException {
+    // public-API equivalent of the driver's internal update validator: top-level names must be operators
+    private static class UpdateOperatorFieldNameValidator implements FieldNameValidator {
+        @Override
+        public boolean validate(String fieldName) {
+            return fieldName.startsWith("$");
+        }
+
+        @Override
+        public String getValidationErrorMessage(String fieldName) {
+            return "Invalid BSON field name " + fieldName + ": update documents must only contain update operators such as $set";
+        }
+
+        @Override
+        public FieldNameValidator getValidatorForField(String fieldName) {
+            return new FieldNameValidator() {
+                @Override
+                public boolean validate(String name) {
+                    return true;
+                }
+
+                @Override
+                public FieldNameValidator getValidatorForField(String name) {
+                    return this;
+                }
+            };
+        }
+    }
+
+    static class WriteFailure extends RuntimeException {
         WriteFailure(String message, Throwable cause) {
             super(message, cause);
         }
@@ -262,28 +421,28 @@ public abstract class AbstractLoad extends AbstractTask implements RunnableTask<
 
         @Schema(
             title = "Matched documents",
-            description = "Documents matched by update or replacement models. 0 for unacknowledged writes (`w=0`), which have no counts to report."
+            description = "Documents matched by update or replacement models. After a task fails on a driver rejection, this count doesn't include the batch the driver sent just before the rejected record. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int matchedCount = 0;
 
         @Schema(
             title = "Deleted documents",
-            description = "Documents removed by bulk delete models. 0 for unacknowledged writes (`w=0`), which have no counts to report."
+            description = "Documents removed by bulk delete models. After a task fails on a driver rejection, this count doesn't include the batch the driver sent just before the rejected record. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int deletedCount = 0;
 
         @Schema(
             title = "Modified documents",
-            description = "Documents updated by bulk operations. 0 for unacknowledged writes (`w=0`), which have no counts to report."
+            description = "Documents updated by bulk operations. After a task fails on a driver rejection, this count doesn't include the batch the driver sent just before the rejected record. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int modifiedCount = 0;
 
         @Schema(
             title = "Upserted documents",
-            description = "Documents created by update or replacement models with `upsert: true` that matched no document. Only `Bulk` sends these models, so it's always 0 for `Load`. 0 for unacknowledged writes (`w=0`), which have no counts to report."
+            description = "Documents created by update or replacement models with `upsert: true` that matched no document. Only `Bulk` sends these models, so it's always 0 for `Load`. After a task fails on a driver rejection, this count doesn't include the batch the driver sent just before the rejected record. 0 for unacknowledged writes (`w=0`), which have no counts to report."
         )
         @Builder.Default
         private int upsertedCount = 0;

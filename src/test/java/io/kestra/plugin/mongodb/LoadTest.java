@@ -15,10 +15,10 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.IntStream;
 
 import org.bson.BsonDocument;
+import org.bson.BsonMaximumSizeExceededException;
 import org.bson.BsonType;
 import org.bson.Document;
 import org.bson.types.ObjectId;
-import com.mongodb.client.model.Sorts;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 
@@ -27,12 +27,8 @@ import com.mongodb.MongoBulkWriteException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.model.CreateCollectionOptions;
 import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.Sorts;
 import com.mongodb.client.model.ValidationOptions;
-
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.AppenderBase;
 
 import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.property.Property;
@@ -44,6 +40,10 @@ import io.kestra.core.tenant.TenantService;
 import io.kestra.core.utils.IdUtils;
 import io.kestra.core.utils.Rethrow;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.AppenderBase;
 import jakarta.inject.Inject;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -334,7 +334,7 @@ class LoadTest extends MongoDbContainer {
             );
         }
 
-        URI uri = put(IntStream.rangeClosed(1, 10).<Map<String, Object>>mapToObj(n -> Map.of("n", n)).toList());
+        URI uri = put(IntStream.rangeClosed(1, 10).<Map<String, Object>> mapToObj(n -> Map.of("n", n)).toList());
         Load load = load(database, "validated", uri).chunk(Property.ofValue(4)).build();
 
         var e = assertThrows(RunnableTaskException.class, () -> load.run(runContext));
@@ -347,6 +347,34 @@ class LoadTest extends MongoDbContainer {
         assertThat(metric(runContext, "records"), is(5D));
         assertThat(metric(runContext, "requests.count"), is(2D));
         assertThat(count(database, "validated"), is(5L));
+    }
+
+    @Test
+    void oversizedDocumentInMiddleOfChunkReportsAccurateAppliedCount() throws Exception {
+        var runContext = runContextFactory.of();
+        var database = "ut_" + IdUtils.create().toLowerCase(Locale.ROOT);
+
+        URI uri = put(
+            List.of(
+                Map.of("n", 1),
+                Map.of("n", 2),
+                Map.of("n", 3),
+                Map.of("n", 4, "big", new byte[17 * 1024 * 1024]),
+                Map.of("n", 5)
+            )
+        );
+        var load = load(database, "oversized", uri).chunk(Property.ofValue(5)).build();
+
+        var e = assertThrows(RunnableTaskException.class, () -> load.run(runContext));
+
+        assertThat(e.getMessage(), startsWith("Record 4 was rejected by the driver (3 records applied before it):"));
+        assertThat(e.getCause(), instanceOf(BsonMaximumSizeExceededException.class));
+        var output = (Load.Output) e.getOutput();
+        assertThat(output.getSize(), is(3L));
+        assertThat(output.getInsertedCount(), is(3));
+        assertThat(metric(runContext, "records"), is(3D));
+        assertThat(metric(runContext, "requests.count"), is(1D));
+        assertThat(count(database, "oversized"), is(3L));
     }
 
     @Test
