@@ -102,8 +102,9 @@ public class Bulk extends AbstractLoad {
     private static final Set<String> UPDATE_KEYS = Set.of("filter", "update", "upsert", "collation", "hint", "arrayFilters");
     // DBRef fields, the only `$` prefixed names the driver allows in a replacement document
     private static final Set<String> REPLACEMENT_EXCEPTIONS = Set.of("$db", "$ref", "$id");
-    // the operation key and its body add two levels around the document
-    private static final int MAX_LINE_NESTING_DEPTH = MongoDbService.MAX_NESTING_DEPTH + 2;
+    // Overflow guard for the whole line, not the document limit: the operation, its body and an update operator wrap the
+    // payload by a few levels. 200 leaves ample room for them and is still shallow enough to parse without any risk to the stack.
+    private static final int MAX_LINE_NESTING_DEPTH = 2 * MongoDbService.MAX_NESTING_DEPTH;
 
     @Override
     protected Flux<WriteModel<Bson>> source(RunContext runContext, InputStream inputStream) throws IOException {
@@ -150,8 +151,7 @@ public class Bulk extends AbstractLoad {
                 }
 
                 try {
-                    MongoDbService.checkJsonNestingDepth(row, MAX_LINE_NESTING_DEPTH);
-                    var bsonDocument = BsonDocument.parse(row);
+                    var bsonDocument = MongoDbService.parse(row, MAX_LINE_NESTING_DEPTH);
 
                     if (bsonDocument.size() != 1) {
                         throw new IllegalArgumentException(
@@ -167,9 +167,11 @@ public class Bulk extends AbstractLoad {
                     var body = operation.getValue().asDocument();
 
                     WriteModel<Bson> docWriteRequest = switch (operation.getKey()) {
-                        case "insertOne" -> new InsertOneModel<>(
-                            MongoDbService.withId(getInsertOneDocument(body))
-                        );
+                        case "insertOne" -> {
+                            var document = getInsertOneDocument(body);
+                            MongoDbService.checkDepth(document, "The document");
+                            yield new InsertOneModel<>(MongoDbService.withId(document));
+                        }
                         case "replaceOne" -> {
                             validateKeys("replaceOne", body, REPLACE_KEYS);
                             var replacement = requireDocument("replaceOne", body, "replacement");
@@ -246,6 +248,7 @@ public class Bulk extends AbstractLoad {
         }
 
         for (var key : update.keySet()) {
+            MongoDbService.checkDepth(update.get(key), "The value of '" + key + "'");
             if (!key.startsWith("$")) {
                 throw new IllegalArgumentException(
                     op + " update must only hold update operators such as $set, but '" + key + "' does not start with '$': wrap the fields in $set, e.g. {\"$set\": {\"" + key + "\": ...}}, or use replaceOne to replace the whole document"
@@ -269,7 +272,12 @@ public class Bulk extends AbstractLoad {
             String article = field.equals("update") ? "an" : "a";
             throw new IllegalArgumentException(op + " requires " + article + " '" + field + "' document");
         }
-        return body.getDocument(field);
+        var document = body.getDocument(field);
+        // the operators of an update are measured one by one in validateUpdate, without their own level
+        if (!field.equals("update")) {
+            MongoDbService.checkDepth(document, "The '" + field + "'");
+        }
+        return document;
     }
 
     // unwrap the bulkWrite { document: ... } envelope; any other body stays as-is for the legacy flat syntax

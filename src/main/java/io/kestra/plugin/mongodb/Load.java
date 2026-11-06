@@ -177,13 +177,6 @@ public class Load extends AbstractLoad {
 
     @SuppressWarnings("unchecked")
     private static Object decodeExtendedJson(Object value, long record, String path, int depth) throws JsonProcessingException {
-        if ((value instanceof Map || value instanceof List) && depth > MongoDbService.MAX_NESTING_DEPTH) {
-            throw new IllegalArgumentException(
-                "Record " + record + ": nested more than " + MongoDbService.MAX_NESTING_DEPTH + " levels deep at field '" + path + "', but MongoDB accepts at most "
-                    + MongoDbService.MAX_NESTING_DEPTH + " levels of nesting in a document: flatten the data"
-            );
-        }
-
         if (value instanceof OffsetDateTime offsetDateTime) {
             return offsetDateTime.toInstant();
         } else if (value instanceof ZonedDateTime zonedDateTime) {
@@ -194,6 +187,10 @@ public class Load extends AbstractLoad {
             // the driver's JsonReader only interprets an object as Extended JSON based on its first key
             String firstKey = map.isEmpty() ? null : map.keySet().iterator().next().toString();
             if (firstKey != null && EXTENDED_JSON_WRAPPER_KEYS.contains(firstKey)) {
+                // a wrapper that decodes to a value is a leaf, so it only counts as a level when it stays a document
+                if (MongoDbService.exceedsMaxDepth(map, 1)) {
+                    throw nestingTooDeep(record, path);
+                }
                 BsonValue decoded;
                 try {
                     decoded = BsonDocument.parse(JacksonMapper.ofJson().writeValueAsString(Map.of("value", map))).get("value");
@@ -207,8 +204,10 @@ public class Load extends AbstractLoad {
                     return decoded;
                 }
             }
+            checkDepth(depth, record, path);
             decodeExtendedJsonFields((Map<String, Object>) map, record, path, depth);
         } else if (value instanceof List<?> list) {
+            checkDepth(depth, record, path);
             var iterator = ((List<Object>) list).listIterator();
             while (iterator.hasNext()) {
                 int index = iterator.nextIndex();
@@ -216,6 +215,16 @@ public class Load extends AbstractLoad {
             }
         }
         return value;
+    }
+
+    private static void checkDepth(int depth, long record, String path) {
+        if (depth > MongoDbService.MAX_NESTING_DEPTH) {
+            throw nestingTooDeep(record, path);
+        }
+    }
+
+    private static IllegalArgumentException nestingTooDeep(long record, String path) {
+        return MongoDbService.nestingTooDeep("Record " + record + ", field '" + path + "'");
     }
 
     private static Decimal128 decodeBigInteger(BigInteger value, long record, String path) {
