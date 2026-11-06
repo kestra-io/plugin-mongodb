@@ -73,15 +73,19 @@ public abstract class MongoDbService {
         try {
             var type = reader.readBsonType();
             while (true) {
-                if (type == BsonType.DOCUMENT || type == BsonType.ARRAY) {
+                if (type == BsonType.DOCUMENT || type == BsonType.ARRAY || type == BsonType.JAVASCRIPT_WITH_SCOPE) {
                     if (++depth > maxDepth) {
                         throw nestingTooDeep("The JSON value");
                     }
-                    isDocument[depth] = type == BsonType.DOCUMENT;
-                    if (isDocument[depth]) {
-                        reader.readStartDocument();
-                    } else {
+                    isDocument[depth] = type != BsonType.ARRAY;
+                    if (type == BsonType.ARRAY) {
                         reader.readStartArray();
+                    } else {
+                        // skipValue() would recurse through the scope without a limit, so it is walked like a document
+                        if (type == BsonType.JAVASCRIPT_WITH_SCOPE) {
+                            reader.readJavaScriptWithScope();
+                        }
+                        reader.readStartDocument();
                     }
                 } else {
                     reader.skipValue();
@@ -122,6 +126,8 @@ public abstract class MongoDbService {
             return 1 + value.asDocument().values().stream().mapToInt(MongoDbService::depth).max().orElse(0);
         } else if (value.isArray()) {
             return 1 + value.asArray().stream().mapToInt(MongoDbService::depth).max().orElse(0);
+        } else if (value.isJavaScriptWithScope()) {
+            return depth(value.asJavaScriptWithScope().getScope());
         }
         return 0;
     }

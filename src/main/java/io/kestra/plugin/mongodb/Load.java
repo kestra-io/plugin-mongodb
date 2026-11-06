@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.MatchResult;
+import java.util.regex.Pattern;
 
 import org.bson.BsonDocument;
 import org.bson.BsonObjectId;
@@ -99,6 +101,9 @@ public class Load extends AbstractLoad {
     // Decimal128's largest finite integer is its maximum 34-digit coefficient scaled by exponent 6111.
     private static final BigInteger DECIMAL128_MAX_INTEGER =
         BigInteger.TEN.pow(34).subtract(BigInteger.ONE).multiply(BigInteger.TEN.pow(6111));
+
+    private static final Pattern PATH_SEGMENT = Pattern.compile("[^.\\[]+|\\[\\d+]");
+    private static final int KEPT_PATH_SEGMENTS = 3;
 
     @Schema(
         title = "Field used as _id",
@@ -224,7 +229,28 @@ public class Load extends AbstractLoad {
     }
 
     private static IllegalArgumentException nestingTooDeep(long record, String path) {
-        return MongoDbService.nestingTooDeep("Record " + record + ", field '" + path + "'");
+        return MongoDbService.nestingTooDeep("Record " + record + ", field '" + abbreviatePath(path) + "'");
+    }
+
+    // keeps the first and last segments of a long field path, so that the error stays readable at the depth limit
+    static String abbreviatePath(String path) {
+        var segments = PATH_SEGMENT.matcher(path).results().map(MatchResult::group).toList();
+        if (segments.size() <= 2 * KEPT_PATH_SEGMENTS + 2) {
+            return path;
+        }
+
+        return joinPath(segments.subList(0, KEPT_PATH_SEGMENTS)) + " … " + joinPath(segments.subList(segments.size() - KEPT_PATH_SEGMENTS, segments.size()));
+    }
+
+    private static String joinPath(List<String> segments) {
+        var joined = new StringBuilder();
+        for (var segment : segments) {
+            if (!joined.isEmpty() && !segment.startsWith("[")) {
+                joined.append('.');
+            }
+            joined.append(segment);
+        }
+        return joined.toString();
     }
 
     private static Decimal128 decodeBigInteger(BigInteger value, long record, String path) {

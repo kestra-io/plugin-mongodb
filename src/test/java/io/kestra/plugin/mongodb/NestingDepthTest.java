@@ -20,6 +20,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @KestraTest
@@ -212,6 +213,89 @@ class NestingDepthTest extends MongoDbContainer {
             map = Map.of("a", map);
         }
         return map;
+    }
+
+    @Test
+    void bulkRejectsADeepCodeScope() throws Exception {
+        var uri = store("{\"insertOne\": {\"document\": {\"x\": {\"$code\": \"f\", \"$scope\": " + nested(true, TOO_DEEP, "1") + "}}}}\n");
+
+        var e = assertThrows(Exception.class, () -> bulk(uri).run(runContextFactory.of()));
+
+        assertThat(e.getMessage(), containsString("Invalid bulk request on line 1"));
+        assertThat(e.getMessage(), containsString("100 levels"));
+    }
+
+    @Test
+    void bulkMeasuresACodeScopeBetweenOneHundredAndTheLineLimit() throws Exception {
+        var uri = store("{\"insertOne\": {\"document\": {\"x\": {\"$code\": \"f\", \"$scope\": " + nested(true, 150, "1") + "}}}}\n");
+
+        var e = assertThrows(Exception.class, () -> bulk(uri).run(runContextFactory.of()));
+
+        assertThat(e.getMessage(), containsString("100 levels"));
+    }
+
+    @Test
+    void bulkAcceptsAShallowCodeScope() throws Exception {
+        var uri = store("{\"insertOne\": {\"document\": {\"x\": {\"$code\": \"f\", \"$scope\": {\"a\": {\"b\": [1, {\"c\": 2}]}}}, \"y\": 1}}}\n");
+
+        var output = bulk(uri).run(runContextFactory.of());
+
+        assertThat(output.getSize(), is(1L));
+    }
+
+    @Test
+    void insertOneRejectsADeepCodeScopeString() {
+        var insert = InsertOne.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
+            .database(Property.ofValue(database()))
+            .collection(Property.ofValue("nesting"))
+            .document("{\"x\": {\"$code\": \"f\", \"$scope\": " + nested(true, TOO_DEEP, "1") + "}}")
+            .build();
+
+        var e = assertThrows(Exception.class, () -> insert.run(runContextFactory.of()));
+
+        assertThat(e.getMessage(), containsString("more than 100 levels"));
+    }
+
+    @Test
+    void insertOneAcceptsAShallowCodeScopeString() throws Exception {
+        var insert = InsertOne.builder()
+            .connection(MongoDbConnection.builder().uri(Property.ofValue(connectionUri)).build())
+            .database(Property.ofValue(database()))
+            .collection(Property.ofValue("nesting"))
+            .document("{\"x\": {\"$code\": \"f\", \"$scope\": {\"a\": {\"b\": 1}}}, \"y\": 1}")
+            .build();
+
+        assertThat(insert.run(runContextFactory.of()).getInsertedId(), notNullValue());
+    }
+
+    @Test
+    void parseDoesNotOverflowTheStackOnAnyExtendedJsonWrapper() {
+        for (var key : new String[]{"$binary", "$code", "$date", "$dbPointer", "$numberLong", "$oid", "$regularExpression", "$symbol", "$timestamp", "$uuid"}) {
+            var json = "{\"x\": {\"" + key + "\": " + nested(true, TOO_DEEP, "1") + "}}";
+
+            assertThrows(RuntimeException.class, () -> MongoDbService.parse(json));
+        }
+    }
+
+    @Test
+    void loadErrorShortensALongFieldPath() throws Exception {
+        for (var objects : new boolean[]{true, false}) {
+            var uri = store("{\"doc\": " + nested(objects, TOO_DEEP, "1") + "}\n");
+
+            var e = assertThrows(Exception.class, () -> load(uri).run(runContextFactory.of()));
+
+            assertThat(e.getMessage(), containsString(" … "));
+            assertThat(e.getMessage().length() < 300, is(true));
+        }
+    }
+
+    @Test
+    void abbreviatePathKeepsShortPathsAndShortensLongOnes() {
+        assertThat(Load.abbreviatePath("a.b[0].c"), is("a.b[0].c"));
+        assertThat(Load.abbreviatePath("a.b.c.d.e.f.g.h"), is("a.b.c.d.e.f.g.h"));
+        assertThat(Load.abbreviatePath("a.b.c.d.e.f.g.h.i.j"), is("a.b.c … h.i.j"));
+        assertThat(Load.abbreviatePath("doc" + "[0]".repeat(20)), is("doc[0][0] … [0][0][0]"));
     }
 
     @Test

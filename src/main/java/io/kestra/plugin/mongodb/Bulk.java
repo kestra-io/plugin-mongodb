@@ -102,8 +102,7 @@ public class Bulk extends AbstractLoad {
     private static final Set<String> UPDATE_KEYS = Set.of("filter", "update", "upsert", "collation", "hint", "arrayFilters");
     // DBRef fields, the only `$` prefixed names the driver allows in a replacement document
     private static final Set<String> REPLACEMENT_EXCEPTIONS = Set.of("$db", "$ref", "$id");
-    // Overflow guard for the whole line, not the document limit: the operation, its body and an update operator wrap the
-    // payload by a few levels. 200 leaves ample room for them and is still shallow enough to parse without any risk to the stack.
+    // whole-line overflow guard: leaves room for the operation, body and update operator levels
     private static final int MAX_LINE_NESTING_DEPTH = 2 * MongoDbService.MAX_NESTING_DEPTH;
 
     @Override
@@ -222,9 +221,8 @@ public class Bulk extends AbstractLoad {
 
                     s.next(docWriteRequest);
                 } catch (RuntimeException e) {
-                    throw new IllegalArgumentException(
-                        "Invalid bulk request on line " + lineNumber + ": " + e.getMessage(), e
-                    );
+                    // no cause: the message already carries the reason, and a cause is logged as a second ERROR line
+                    throw new IllegalArgumentException("Invalid bulk request on line " + lineNumber + ": " + e.getMessage());
                 }
             }
 
