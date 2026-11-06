@@ -136,7 +136,7 @@ public class Load extends AbstractLoad {
                 var values = (Map<String, Object>) o;
 
                 // decoded first so that an idKey given as an $oid wrapper is already an ObjectId
-                decodeExtendedJsonFields(values, recordNumber.incrementAndGet(), "");
+                decodeExtendedJsonFields(values, recordNumber.incrementAndGet(), "", 1);
 
                 if (rIdKey.isPresent()) {
                     var idKey = rIdKey.get();
@@ -169,14 +169,21 @@ public class Load extends AbstractLoad {
             });
     }
 
-    private static void decodeExtendedJsonFields(Map<String, Object> document, long record, String path) throws JsonProcessingException {
+    private static void decodeExtendedJsonFields(Map<String, Object> document, long record, String path, int depth) throws JsonProcessingException {
         for (var entry : document.entrySet()) {
-            entry.setValue(decodeExtendedJson(entry.getValue(), record, path.isEmpty() ? entry.getKey() : path + "." + entry.getKey()));
+            entry.setValue(decodeExtendedJson(entry.getValue(), record, path.isEmpty() ? entry.getKey() : path + "." + entry.getKey(), depth + 1));
         }
     }
 
     @SuppressWarnings("unchecked")
-    private static Object decodeExtendedJson(Object value, long record, String path) throws JsonProcessingException {
+    private static Object decodeExtendedJson(Object value, long record, String path, int depth) throws JsonProcessingException {
+        if ((value instanceof Map || value instanceof List) && depth > MongoDbService.MAX_NESTING_DEPTH) {
+            throw new IllegalArgumentException(
+                "Record " + record + ": nested more than " + MongoDbService.MAX_NESTING_DEPTH + " levels deep at field '" + path + "', but MongoDB accepts at most "
+                    + MongoDbService.MAX_NESTING_DEPTH + " levels of nesting in a document: flatten the data"
+            );
+        }
+
         if (value instanceof OffsetDateTime offsetDateTime) {
             return offsetDateTime.toInstant();
         } else if (value instanceof ZonedDateTime zonedDateTime) {
@@ -200,12 +207,12 @@ public class Load extends AbstractLoad {
                     return decoded;
                 }
             }
-            decodeExtendedJsonFields((Map<String, Object>) map, record, path);
+            decodeExtendedJsonFields((Map<String, Object>) map, record, path, depth);
         } else if (value instanceof List<?> list) {
             var iterator = ((List<Object>) list).listIterator();
             while (iterator.hasNext()) {
                 int index = iterator.nextIndex();
-                iterator.set(decodeExtendedJson(iterator.next(), record, path + "[" + index + "]"));
+                iterator.set(decodeExtendedJson(iterator.next(), record, path + "[" + index + "]", depth + 1));
             }
         }
         return value;

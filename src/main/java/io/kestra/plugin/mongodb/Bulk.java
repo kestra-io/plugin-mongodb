@@ -102,6 +102,8 @@ public class Bulk extends AbstractLoad {
     private static final Set<String> UPDATE_KEYS = Set.of("filter", "update", "upsert", "collation", "hint", "arrayFilters");
     // DBRef fields, the only `$` prefixed names the driver allows in a replacement document
     private static final Set<String> REPLACEMENT_EXCEPTIONS = Set.of("$db", "$ref", "$id");
+    // the operation key and its body add two levels around the document
+    private static final int MAX_LINE_NESTING_DEPTH = MongoDbService.MAX_NESTING_DEPTH + 2;
 
     @Override
     protected Flux<WriteModel<Bson>> source(RunContext runContext, InputStream inputStream) throws IOException {
@@ -148,6 +150,7 @@ public class Bulk extends AbstractLoad {
                 }
 
                 try {
+                    MongoDbService.checkJsonNestingDepth(row, MAX_LINE_NESTING_DEPTH);
                     var bsonDocument = BsonDocument.parse(row);
 
                     if (bsonDocument.size() != 1) {

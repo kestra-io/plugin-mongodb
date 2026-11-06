@@ -32,6 +32,11 @@ import io.kestra.core.serializers.JacksonMapper;
 
 public abstract class MongoDbService {
     /**
+     * Maximum levels of nesting MongoDB accepts in a document.
+     */
+    public static final int MAX_NESTING_DEPTH = 100;
+
+    /**
      * How an ObjectId is rendered in task output. HEX keeps the pre-existing bare hex string; EXTENDED_JSON
      * wraps it as {"$oid": "..."}, which Load decodes back to an ObjectId.
      */
@@ -43,6 +48,36 @@ public abstract class MongoDbService {
     // ofJson() drops null map entries, so {deletedAt: null} becomes {} and matches every document.
     private static final ObjectMapper JSON_WITH_NULL_MAP_ENTRIES = JacksonMapper.ofJson().copy()
         .setDefaultPropertyInclusion(JsonInclude.Value.construct(JsonInclude.Include.NON_NULL, JsonInclude.Include.ALWAYS));
+
+    /**
+     * Fails when the JSON text nests objects or arrays deeper than {@code maxDepth}. It scans the text without
+     * recursion, so it is safe to run before a recursive parser that would overflow the stack on such input.
+     */
+    public static void checkJsonNestingDepth(String json, int maxDepth) {
+        var depth = 0;
+        var quote = 0;
+
+        for (var i = 0; i < json.length(); i++) {
+            var c = json.charAt(i);
+            if (quote != 0) {
+                if (c == '\\') {
+                    i++;
+                } else if (c == quote) {
+                    quote = 0;
+                }
+            } else if (c == '"' || c == '\'') {
+                quote = c;
+            } else if (c == '{' || c == '[') {
+                if (++depth > maxDepth) {
+                    throw new IllegalArgumentException(
+                        "nested more than " + maxDepth + " levels deep, but MongoDB accepts at most " + MAX_NESTING_DEPTH + " levels of nesting in a document: flatten the data"
+                    );
+                }
+            } else if (c == '}' || c == ']') {
+                depth--;
+            }
+        }
+    }
 
     @SuppressWarnings("unchecked")
     public static BsonDocument toDocument(RunContext runContext, Object value) throws IllegalVariableEvaluationException, IOException {
