@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.MatchResult;
+import java.util.regex.Pattern;
 
 import org.bson.BsonDocument;
 import org.bson.BsonObjectId;
@@ -100,6 +102,9 @@ public class Load extends AbstractLoad {
     private static final BigInteger DECIMAL128_MAX_INTEGER =
         BigInteger.TEN.pow(34).subtract(BigInteger.ONE).multiply(BigInteger.TEN.pow(6111));
 
+    private static final Pattern PATH_SEGMENT = Pattern.compile("[^.\\[]+|\\[\\d+]");
+    private static final int KEPT_PATH_SEGMENTS = 3;
+
     @Schema(
         title = "Field used as _id",
         description = """
@@ -136,7 +141,7 @@ public class Load extends AbstractLoad {
                 var values = (Map<String, Object>) o;
 
                 // decoded first so that an idKey given as an $oid wrapper is already an ObjectId
-                decodeExtendedJsonFields(values, recordNumber.incrementAndGet(), "");
+                decodeExtendedJsonFields(values, recordNumber.incrementAndGet(), "", 1);
 
                 if (rIdKey.isPresent()) {
                     var idKey = rIdKey.get();
@@ -169,14 +174,14 @@ public class Load extends AbstractLoad {
             });
     }
 
-    private static void decodeExtendedJsonFields(Map<String, Object> document, long record, String path) throws JsonProcessingException {
+    private static void decodeExtendedJsonFields(Map<String, Object> document, long record, String path, int depth) throws JsonProcessingException {
         for (var entry : document.entrySet()) {
-            entry.setValue(decodeExtendedJson(entry.getValue(), record, path.isEmpty() ? entry.getKey() : path + "." + entry.getKey()));
+            entry.setValue(decodeExtendedJson(entry.getValue(), record, path.isEmpty() ? entry.getKey() : path + "." + entry.getKey(), depth + 1));
         }
     }
 
     @SuppressWarnings("unchecked")
-    private static Object decodeExtendedJson(Object value, long record, String path) throws JsonProcessingException {
+    private static Object decodeExtendedJson(Object value, long record, String path, int depth) throws JsonProcessingException {
         if (value instanceof OffsetDateTime offsetDateTime) {
             return offsetDateTime.toInstant();
         } else if (value instanceof ZonedDateTime zonedDateTime) {
@@ -187,6 +192,10 @@ public class Load extends AbstractLoad {
             // the driver's JsonReader only interprets an object as Extended JSON based on its first key
             String firstKey = map.isEmpty() ? null : map.keySet().iterator().next().toString();
             if (firstKey != null && EXTENDED_JSON_WRAPPER_KEYS.contains(firstKey)) {
+                // a wrapper that decodes to a value is a leaf, so it only counts as a level when it stays a document
+                if (MongoDbService.exceedsMaxDepth(map, 1)) {
+                    throw nestingTooDeep(record, path);
+                }
                 BsonValue decoded;
                 try {
                     decoded = BsonDocument.parse(JacksonMapper.ofJson().writeValueAsString(Map.of("value", map))).get("value");
@@ -200,15 +209,48 @@ public class Load extends AbstractLoad {
                     return decoded;
                 }
             }
-            decodeExtendedJsonFields((Map<String, Object>) map, record, path);
+            checkDepth(depth, record, path);
+            decodeExtendedJsonFields((Map<String, Object>) map, record, path, depth);
         } else if (value instanceof List<?> list) {
+            checkDepth(depth, record, path);
             var iterator = ((List<Object>) list).listIterator();
             while (iterator.hasNext()) {
                 int index = iterator.nextIndex();
-                iterator.set(decodeExtendedJson(iterator.next(), record, path + "[" + index + "]"));
+                iterator.set(decodeExtendedJson(iterator.next(), record, path + "[" + index + "]", depth + 1));
             }
         }
         return value;
+    }
+
+    private static void checkDepth(int depth, long record, String path) {
+        if (depth > MongoDbService.MAX_NESTING_DEPTH) {
+            throw nestingTooDeep(record, path);
+        }
+    }
+
+    private static IllegalArgumentException nestingTooDeep(long record, String path) {
+        return MongoDbService.nestingTooDeep("Record " + record + ", field '" + abbreviatePath(path) + "'");
+    }
+
+    // keeps the first and last segments of a long field path, so that the error stays readable at the depth limit
+    static String abbreviatePath(String path) {
+        var segments = PATH_SEGMENT.matcher(path).results().map(MatchResult::group).toList();
+        if (segments.size() <= 2 * KEPT_PATH_SEGMENTS + 2) {
+            return path;
+        }
+
+        return joinPath(segments.subList(0, KEPT_PATH_SEGMENTS)) + " … " + joinPath(segments.subList(segments.size() - KEPT_PATH_SEGMENTS, segments.size()));
+    }
+
+    private static String joinPath(List<String> segments) {
+        var joined = new StringBuilder();
+        for (var segment : segments) {
+            if (!joined.isEmpty() && !segment.startsWith("[")) {
+                joined.append('.');
+            }
+            joined.append(segment);
+        }
+        return joined.toString();
     }
 
     private static Decimal128 decodeBigInteger(BigInteger value, long record, String path) {

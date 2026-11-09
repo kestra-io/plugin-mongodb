@@ -23,7 +23,9 @@ import com.mongodb.MongoWriteException;
 import org.bson.BsonBinarySubType;
 import org.bson.BsonDocument;
 import org.bson.BsonObjectId;
+import org.bson.BsonType;
 import org.bson.BsonValue;
+import org.bson.json.JsonReader;
 import org.bson.types.Decimal128;
 
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
@@ -31,6 +33,11 @@ import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.JacksonMapper;
 
 public abstract class MongoDbService {
+    /**
+     * Maximum levels of nesting MongoDB accepts in a document.
+     */
+    public static final int MAX_NESTING_DEPTH = 100;
+
     /**
      * How an ObjectId is rendered in task output. HEX keeps the pre-existing bare hex string; EXTENDED_JSON
      * wraps it as {"$oid": "..."}, which Load decodes back to an ObjectId.
@@ -44,10 +51,126 @@ public abstract class MongoDbService {
     private static final ObjectMapper JSON_WITH_NULL_MAP_ENTRIES = JacksonMapper.ofJson().copy()
         .setDefaultPropertyInclusion(JsonInclude.Value.construct(JsonInclude.Include.NON_NULL, JsonInclude.Include.ALWAYS));
 
+    /**
+     * Parses a JSON object into a document, failing first when it nests objects or arrays deeper than
+     * {@code maxDepth}, so that the parser's recursion stays bounded on hostile input.
+     */
+    public static BsonDocument parse(String json, int maxDepth) {
+        checkNestingDepth(json, maxDepth);
+        return BsonDocument.parse(json);
+    }
+
+    public static BsonDocument parse(String json) {
+        return parse(json, MAX_NESTING_DEPTH);
+    }
+
+    // walks the text with the driver's own reader, without recursion, so it counts what BsonDocument.parse will see
+    private static void checkNestingDepth(String json, int maxDepth) {
+        var reader = new JsonReader(json);
+        var isDocument = new boolean[maxDepth + 1];
+        var depth = 0;
+
+        try {
+            var type = reader.readBsonType();
+            while (true) {
+                if (type == BsonType.DOCUMENT || type == BsonType.ARRAY || type == BsonType.JAVASCRIPT_WITH_SCOPE) {
+                    if (++depth > maxDepth) {
+                        throw nestingTooDeep("The JSON value");
+                    }
+                    isDocument[depth] = type != BsonType.ARRAY;
+                    if (type == BsonType.ARRAY) {
+                        reader.readStartArray();
+                    } else {
+                        // skipValue() would recurse through the scope without a limit, so it is walked like a document
+                        if (type == BsonType.JAVASCRIPT_WITH_SCOPE) {
+                            reader.readJavaScriptWithScope();
+                        }
+                        reader.readStartDocument();
+                    }
+                } else {
+                    reader.skipValue();
+                }
+
+                while (true) {
+                    if (depth == 0) {
+                        return;
+                    }
+                    type = reader.readBsonType();
+                    if (type != BsonType.END_OF_DOCUMENT) {
+                        break;
+                    }
+                    if (isDocument[depth]) {
+                        reader.readEndDocument();
+                    } else {
+                        reader.readEndArray();
+                    }
+                    depth--;
+                }
+                if (isDocument[depth]) {
+                    reader.readName();
+                }
+            }
+        } catch (NestingTooDeepException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            // malformed JSON: BsonDocument.parse reports it with its own message, after at most maxDepth levels
+        }
+    }
+
+    /**
+     * Depth of a value, counting the value itself as one level when it is an object or an array. Only call it on
+     * values that went through {@link #parse(String, int)}, whose depth is bounded.
+     */
+    public static int depth(BsonValue value) {
+        if (value.isDocument()) {
+            return 1 + value.asDocument().values().stream().mapToInt(MongoDbService::depth).max().orElse(0);
+        } else if (value.isArray()) {
+            return 1 + value.asArray().stream().mapToInt(MongoDbService::depth).max().orElse(0);
+        } else if (value.isJavaScriptWithScope()) {
+            return depth(value.asJavaScriptWithScope().getScope());
+        }
+        return 0;
+    }
+
+    public static void checkDepth(BsonValue value, String what) {
+        if (depth(value) > MAX_NESTING_DEPTH) {
+            throw nestingTooDeep(what);
+        }
+    }
+
+    /**
+     * Whether a deserialized value nests deeper than {@link #MAX_NESTING_DEPTH}. It stops descending at the limit,
+     * so its recursion is bounded.
+     */
+    public static boolean exceedsMaxDepth(Object value, int level) {
+        if (level > MAX_NESTING_DEPTH && (value instanceof Map || value instanceof List)) {
+            return true;
+        }
+        if (value instanceof Map<?, ?> map) {
+            return map.values().stream().anyMatch(v -> exceedsMaxDepth(v, level + 1));
+        } else if (value instanceof List<?> list) {
+            return list.stream().anyMatch(v -> exceedsMaxDepth(v, level + 1));
+        }
+        return false;
+    }
+
+    public static IllegalArgumentException nestingTooDeep(String what) {
+        return new NestingTooDeepException(
+            what + " is nested more than " + MAX_NESTING_DEPTH + " levels deep: MongoDB accepts at most " + MAX_NESTING_DEPTH
+                + " levels of nesting in a document, flatten the data"
+        );
+    }
+
+    private static class NestingTooDeepException extends IllegalArgumentException {
+        NestingTooDeepException(String message) {
+            super(message);
+        }
+    }
+
     @SuppressWarnings("unchecked")
     public static BsonDocument toDocument(RunContext runContext, Object value) throws IllegalVariableEvaluationException, IOException {
         if (value instanceof String) {
-            return BsonDocument.parse(runContext.render((String) value));
+            return parse(runContext.render((String) value));
         } else if (value instanceof Map) {
             return toDocument(runContext.render((Map<String, Object>) value));
         } else if (value == null) {
@@ -59,6 +182,10 @@ public abstract class MongoDbService {
 
     // for values that are already rendered: rendering them again would evaluate data as Pebble expressions
     public static BsonDocument toDocument(Map<String, Object> rendered) throws IOException {
+        if (exceedsMaxDepth(rendered, 1)) {
+            throw nestingTooDeep("The document");
+        }
+
         return BsonDocument.parse(JSON_WITH_NULL_MAP_ENTRIES.writeValueAsString(rendered));
     }
 
