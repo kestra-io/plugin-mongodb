@@ -32,7 +32,6 @@ import io.kestra.core.models.executions.metrics.Counter;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.serializers.FileSerde;
-import io.kestra.core.serializers.JacksonMapper;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
@@ -198,7 +197,8 @@ public class Load extends AbstractLoad {
                 }
                 BsonValue decoded;
                 try {
-                    decoded = BsonDocument.parse(JacksonMapper.ofJson().writeValueAsString(Map.of("value", map))).get("value");
+                    // nulls are kept: dropping them would turn {"$date": null} into {} and hide a null next to a wrapper
+                    decoded = BsonDocument.parse(MongoDbService.JSON_WITH_NULL_MAP_ENTRIES.writeValueAsString(Map.of("value", map))).get("value");
                 } catch (RuntimeException e) {
                     throw new IllegalArgumentException(
                         "Record " + record + ", field '" + path + "': value looks like an Extended JSON " + firstKey + " wrapper but could not be decoded: " + e.getMessage(),

@@ -2,8 +2,10 @@ package io.kestra.plugin.mongodb;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.time.ZonedDateTime;
 import java.util.HashMap;
@@ -272,6 +274,52 @@ class LoadExtendedJsonTest {
     }
 
     @Test
+    void shouldFailWithRecordAndFieldWhenExtendedJsonWrapperHoldsNull() {
+        for (var wrapper : List.of("$date", "$numberLong", "$oid", "$numberDecimal", "$uuid")) {
+            var e = assertThrows(
+                IllegalArgumentException.class,
+                () -> encodeLines("{\"_id\": 1, \"name\": \"valid\"}", "{\"_id\": 2, \"value\": {\"" + wrapper + "\": null}}"),
+                wrapper
+            );
+
+            assertThat(wrapper, e.getMessage(), containsString("Record 2, field 'value': value looks like an Extended JSON " + wrapper + " wrapper"));
+            assertThat(wrapper, e.getCause(), instanceOf(JsonParseException.class));
+        }
+    }
+
+    @Test
+    void shouldFailWithRecordAndFieldWhenNullSitsNextToExtendedJsonWrapper() {
+        // a null sibling fails like any other sibling instead of being dropped to leave a valid wrapper
+        for (var sibling : List.of("1", "null")) {
+            var e = assertThrows(
+                IllegalArgumentException.class,
+                () -> encodeLines("{\"_id\": 2, \"o\": {\"$oid\": \"64b7f0a1c2d3e4f5a6b7c8d9\", \"x\": " + sibling + "}}"),
+                sibling
+            );
+
+            assertThat(sibling, e.getMessage(), containsString("Record 1, field 'o': value looks like an Extended JSON $oid wrapper"));
+            assertThat(sibling, e.getCause(), instanceOf(JsonParseException.class));
+        }
+
+        var nested = assertThrows(
+            IllegalArgumentException.class,
+            () -> encodeLines("{\"nested\": {\"at\": {\"$date\": {\"$numberLong\": \"1704067200000\", \"x\": null}}}}")
+        );
+
+        assertThat(nested.getMessage(), containsString("Record 1, field 'nested.at': value looks like an Extended JSON $date wrapper"));
+    }
+
+    @Test
+    void shouldKeepNullWhenDriverReadsWrapperKeyAsDocument() throws Exception {
+        // like a string value, a null under these keys is not a wrapper for the driver, so the object stays a document
+        var encoded = encodeLines("{\"t\": {\"$type\": null}, \"r\": {\"$regex\": \"^a\", \"$options\": null}}").getFirst();
+
+        assertThat(encoded.getDocument("t").get("$type").getBsonType(), is(BsonType.NULL));
+        assertThat(encoded.getDocument("r").getString("$regex").getValue(), is("^a"));
+        assertThat(encoded.getDocument("r").get("$options").getBsonType(), is(BsonType.NULL));
+    }
+
+    @Test
     void shouldEncodeOffsetDateTimeAsUtcBsonDate() throws Exception {
         var encoded = encode(Map.of("createdAt", OffsetDateTime.parse("2024-01-01T10:00:00+02:00")));
 
@@ -475,7 +523,16 @@ class LoadExtendedJsonTest {
             FileSerde.write(output, record);
         }
 
-        return load.source(runContextFactory.of(), new ByteArrayInputStream(output.toByteArray()))
+        return encode(load, new ByteArrayInputStream(output.toByteArray()));
+    }
+
+    // records as a user's JSON lines file, so that null values reach Load as they are written
+    private List<BsonDocument> encodeLines(String... lines) throws Exception {
+        return encode(Load.builder().build(), new ByteArrayInputStream(String.join("\n", lines).getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private List<BsonDocument> encode(Load load, InputStream input) throws Exception {
+        return load.source(runContextFactory.of(), input)
             .map(model ->
             {
                 var document = (Document) ((InsertOneModel<?>) model).getDocument();
