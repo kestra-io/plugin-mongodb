@@ -48,7 +48,7 @@ public abstract class MongoDbService {
     }
 
     // ofJson() drops null map entries, so {deletedAt: null} becomes {} and matches every document.
-    private static final ObjectMapper JSON_WITH_NULL_MAP_ENTRIES = JacksonMapper.ofJson().copy()
+    static final ObjectMapper JSON_WITH_NULL_MAP_ENTRIES = JacksonMapper.ofJson().copy()
         .setDefaultPropertyInclusion(JsonInclude.Value.construct(JsonInclude.Include.NON_NULL, JsonInclude.Include.ALWAYS));
 
     /**
