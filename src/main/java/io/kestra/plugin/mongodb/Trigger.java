@@ -263,6 +263,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
             logger.debug("Found '{}' rows", output.getSize());
 
             if (Optional.ofNullable(output.getSize()).orElse(0L) == 0) {
+                deleteStoredFile(runContext, output);
                 return Optional.empty();
             }
 
@@ -278,6 +279,19 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
             this.cursor = null;
             this.client = null;
             this.sessionKiller = null;
+        }
+    }
+
+    // with store: true, Find has already uploaded an empty file; no execution will ever own it, so nothing would purge it
+    private static void deleteStoredFile(RunContext runContext, Find.Output output) {
+        if (output.getUri() == null) {
+            return;
+        }
+
+        try {
+            runContext.storage().deleteFile(output.getUri());
+        } catch (Exception e) {
+            runContext.logger().warn("Failed to delete the empty result file '{}' from internal storage", output.getUri(), e);
         }
     }
 
