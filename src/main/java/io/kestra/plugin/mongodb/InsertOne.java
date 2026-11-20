@@ -6,6 +6,7 @@ import org.bson.BsonDocument;
 import org.bson.conversions.Bson;
 import org.slf4j.Logger;
 
+import com.mongodb.MongoException;
 import com.mongodb.MongoWriteConcernException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
@@ -32,7 +33,14 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @Schema(
     title = "Insert one document into MongoDB",
-    description = "Renders a BSON document from Flow variables and inserts it with insertOne. Requires write access; document may be provided as JSON/BSON string or map."
+    description = """
+        Renders a BSON document from Flow variables and inserts it with insertOne. Requires write access; document may be provided as JSON/BSON string or map.
+
+        ### Failures
+        If the connection is lost after the insert was sent, MongoDB may have stored the document even though the task fails; the error names the document's `_id` so you can check.
+        A retry renders the document again, so a document without its own `_id` gets a new one and the retry inserts a second copy. To make a retry safe, set `_id` in the document: a retry then fails with a duplicate key error instead of inserting it twice.
+        Keep the driver's `retryWrites` on (the default): it retries an insert once without creating a duplicate.
+        """
 )
 @Plugin(
     examples = {
@@ -117,6 +125,21 @@ public class InsertOne extends AbstractTask implements RunnableTask<InsertOne.Ou
                         .insertedId(MongoDbService.toIdString(bsonDocument.get("_id")))
                         .wasAcknowledged(true)
                         .build()
+                );
+            } catch (MongoException e) {
+                var cause = MongoDbService.unknownWriteOutcome(e, false);
+                if (cause == null) {
+                    throw e;
+                }
+
+                // no outputs or metrics: the insert may not have happened, so reporting the id as inserted would be wrong
+                var id = MongoDbService.toIdString(bsonDocument.get("_id"));
+                throw MongoDbService.unknownWriteOutcomeError(
+                    "insert",
+                    cause,
+                    "it's unknown whether the document with `_id` " + id + " was inserted",
+                    "Check whether it exists before retrying: a retry of a document without its own `_id` inserts a second copy (see the task's Failures section)",
+                    e
                 );
             }
 
