@@ -242,10 +242,11 @@ public abstract class MongoDbService {
     /**
      * The error for a write whose outcome is unknown, keeping the driver error as its cause.
      *
+     * @param operation the write that failed: an operation such as UPDATE_MANY, or a name such as "insert"
      * @param unknown what is unknown, e.g. "it's unknown whether the document was updated"
      * @param retry what the user should know before retrying
      */
-    static IllegalStateException unknownWriteOutcomeError(Enum<?> operation, String cause, String unknown, String retry, MongoException e) {
+    static IllegalStateException unknownWriteOutcomeError(Object operation, String cause, String unknown, String retry, MongoException e) {
         return new IllegalStateException("The %s failed %s, so %s. %s: %s".formatted(operation, cause, unknown, retry, e.getMessage()), e);
     }
 

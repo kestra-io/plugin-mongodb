@@ -16,12 +16,12 @@ import io.kestra.core.runners.RunContext;
 import lombok.experimental.SuperBuilder;
 
 /**
- * Throws the given error from every single-statement write (update, replace, delete), to test failures that need a
+ * Throws the given error from every single-statement write (insert, update, replace, delete), to test failures that need a
  * real failover. Overriding the task instead would register a plugin.
  */
 @SuperBuilder
 class FailingWriteConnection extends MongoDbConnection {
-    private static final Set<String> WRITES = Set.of("updateOne", "updateMany", "replaceOne", "deleteOne", "deleteMany");
+    private static final Set<String> WRITES = Set.of("insertOne", "updateOne", "updateMany", "replaceOne", "deleteOne", "deleteMany");
 
     private final MongoException failure;
 
